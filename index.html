@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Prevents zooming when tapping inputs on mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HVAC Tech Assistant - TryTryAgain</title>
+    
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Load React -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Load Babel to compile JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // --- INLINE ICONS ---
+        const Icon = ({ children, className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+        const ClipboardCopy = ({ className }) => <Icon className={className}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M15 2h-6"/><path d="m9 14 2 2 4-4"/></Icon>;
+        const Thermometer = ({ className }) => <Icon className={className}><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></Icon>;
+        const Wind = ({ className }) => <Icon className={className}><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></Icon>;
+        const Zap = ({ className }) => <Icon className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Icon>;
+        const CheckCircle2 = ({ className }) => <Icon className={className}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></Icon>;
+        const FileText = ({ className }) => <Icon className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></Icon>;
+        const Settings2 = ({ className }) => <Icon className={className}><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="7" r="3"/><circle cx="8" cy="17" r="3"/></Icon>;
+        const Activity = ({ className }) => <Icon className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Icon>;
+        const RotateCcw = ({ className }) => <Icon className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></Icon>;
+        const Flame = ({ className }) => <Icon className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Icon>;
+        const Monitor = ({ className }) => <Icon className={className}><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></Icon>;
+
+        // --- HOISTED UI COMPONENTS ---
+        // Relocated outside the main component scope to prevent React from 
+        // destroying and recreating input DOM nodes on every keystroke.
+        const NumInput = ({ label, name, placeholder, unit, disabled, data, onChange, isNonOp }) => {
+            const isEmpty = data[name] === '';
+            const isReading = ['returnTemp', 'supplyTemp', 'compressorAmps', 'fanAmps', 'blowerAmps'].includes(name);
+            const showWarning = !disabled && isEmpty && (!isReading || !isNonOp);
+            return (
+                <div className={`flex flex-col mb-3 ${disabled ? 'opacity-50 grayscale-[50%]' : ''}`}>
+                    <label className="text-xs font-semibold text-gray-600 mb-1">{label}</label>
+                    <div className="relative">
+                        <input
+                            type="number"
+                            inputMode="decimal"
+                            step="any"
+                            name={name}
+                            value={data[name]}
+                            onChange={onChange}
+                            placeholder={placeholder}
+                            disabled={disabled}
+                            className={`w-full pl-3 pr-12 py-2 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 transition-all text-sm outline-none disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${showWarning ? 'border-red-300 shadow-sm' : 'border-gray-200'}`}
+                        />
+                        {unit && <span className="absolute right-3 top-2 text-gray-400 text-[10px]">{unit}</span>}
+                    </div>
+                </div>
+            );
+        };
+
+        const TextInput = ({ label, name, placeholder, disabled, data, onChange }) => {
+            const isEmpty = data[name] === '';
+            const showWarning = !disabled && isEmpty;
+            return (
+                <div className={`flex flex-col mb-3 ${disabled ? 'opacity-50 grayscale-[50%]' : ''}`}>
+                    <label className="text-xs font-semibold text-gray-600 mb-1">{label}</label>
+                    <input
+                        type="text"
+                        name={name}
+                        value={data[name]}
+                        onChange={onChange}
+                        placeholder={placeholder}
+                        disabled={disabled}
+                        className={`w-full px-3 py-2 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 transition-all text-sm outline-none disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${showWarning ? 'border-red-300 shadow-sm' : 'border-gray-200'}`}
+                    />
+                </div>
+            );
+        };
+
+        const SelectInput = ({ label, name, options, disabled, data, onChange }) => {
+            const isEmpty = data[name] === '';
+            return (
+                <div className={`flex flex-col mb-3 ${disabled ? 'opacity-50 grayscale-[50%]' : ''}`}>
+                    <label className="text-xs font-semibold text-gray-600 mb-1">{label}</label>
+                    <select
+                        name={name}
+                        value={data[name]}
+                        onChange={onChange}
+                        disabled={disabled}
+                        className={`w-full px-3 py-2 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 transition-all text-sm outline-none disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${!disabled && isEmpty ? 'border-red-400 text-red-600 font-bold' : 'border-gray-200 text-gray-800'}`}
+                    >
+                        <option value="">(SELECT)</option>
+                        {options.map(opt => <option key={opt.val} value={opt.val} className="text-gray-800 font-normal">{opt.label}</option>)}
+                    </select>
+                </div>
+            );
+        };
+
+        const InlineSelect = ({ name, value, children, disabled, onChange }) => {
+            const isEmpty = value === '';
+            return (
+                <select 
+                    name={name} 
+                    value={value} 
+                    onChange={onChange} 
+                    disabled={disabled}
+                    className={`w-full px-3 py-2 bg-gray-50 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 ${!disabled && isEmpty ? 'border-red-400 text-red-600 font-bold' : 'border-gray-200 text-gray-800 font-medium'}`}
+                >
+                    {children}
+                </select>
+            );
+        };
+
+        // --- APP LOGIC ---
+        const INITIAL_STATE = {
+            jobName: '', modelNumber: '', serialNumber: '', tonnageRating: '',
+            outdoorUnitType: '', packageUnitType: '', indoorUnitType: '', 
+            heatingType: '', operationalMode: '', refrigerant: '', 
+            customRefrigerant: '', meteringDevice: '', returnTemp: '', supplyTemp: '', 
+            supplyStatic: '', returnStatic: '',
+            outdoorAmbient: '', suctionSatTemp: '', suctionLineTemp: '', liquidSatTemp: '', 
+            liquidLineTemp: '', compressorAmps: '', fanAmps: '', blowerAmps: '', 
+            lineVoltage: '', controlVoltage: '', heaterKitAmps: '', heaterKitVoltage: '',
+            inletGasStatic: '', inletGasLoad: '', manifoldPressure: '',
+            inducerAmps: '', inducedDraftPressure: '', pressureSwitchPoint: '',
+            gasReturnTemp: '', gasSupplyTemp: '',
+            // Mini-Split Specifics
+            msOutdoorSize: '', msHeadCount: '0', 
+            msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '' })),
+            msIndoorError: '', msOutdoorError: '', msSetpoint: '', msRoomTemp: '',
+            msCommVoltage: '', msIndoorPower: '', msFrequency: '', msFlareLeak: '',
+            msBlowerWheel: '', msDrainTest: '',
+            // Capacitor System
+            indoorCap: '',
+            indoorECM: false,
+            oduCapType: '', 
+            oduCapHerm: '',
+            oduCapFan: '',
+            oduFanECM: false,
+            oduCapComp: '',
+            notes: ''
+        };
+
+        const HvacTroubleshooter = () => {
+            const [activeTab, setActiveTab] = useState('data');
+            const [copied, setCopied] = useState(false);
+            const [showConfirmReset, setShowConfirmReset] = useState(false);
+            const [isMetric, setIsMetric] = useState(false);
+
+            const [data, setData] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('hvac-data-trytryagain');
+                    return saved ? JSON.parse(saved) : INITIAL_STATE;
+                } catch (e) {
+                    return INITIAL_STATE;
+                }
+            });
+
+            // Dynamic Unit Variables
+            const tempUnit = isMetric ? '°C' : '°F';
+            const pressureUnit = isMetric ? ' kPa' : ' PSIG';
+            const staticUnit = isMetric ? ' kPa' : ' in. w.c.';
+
+            // Boolean Helpers for UI Logic
+            const isMiniSplit = data.outdoorUnitType === 'Mini-Split';
+            const isPackageUnit = data.outdoorUnitType === 'Package Unit';
+            const hasOutdoorUnit = data.outdoorUnitType !== '' && data.outdoorUnitType !== 'None';
+            const showOutdoorData = ['Air Conditioner', 'Heat Pump', 'Package Unit', 'Mini-Split'].includes(data.outdoorUnitType);
+            const showRefrigerantDetails = hasOutdoorUnit;
+            
+            const isGasAvailable = data.indoorUnitType === 'Gas Furnace' || (isPackageUnit && data.heatingType === 'Gas Heat');
+            const isAuxAvailable = (data.indoorUnitType === 'Air Handler w/Heat Strips' || (isPackageUnit && data.heatingType === 'Electric Strip Heat')) && !isMiniSplit;
+            const isHeatPumpAvailable = data.outdoorUnitType === 'Heat Pump' || (isPackageUnit && data.packageUnitType === 'Heat Pump') || isMiniSplit;
+            const isNonOp = data.operationalMode === 'Non-Operative';
+
+            // Pre-Flight Validation Constraint
+            const isExportReady = data.jobName.trim() !== '' && data.modelNumber.trim() !== '' && data.serialNumber.trim() !== '';
+
+            useEffect(() => {
+                localStorage.setItem('hvac-data-trytryagain', JSON.stringify(data));
+            }, [data]);
+
+            const handleReset = () => {
+                setData(INITIAL_STATE);
+                localStorage.removeItem('hvac-data-trytryagain');
+                setShowConfirmReset(false);
+                setActiveTab('data');
+            };
+
+            const handleClearHeads = () => {
+                setData(prev => ({
+                    ...prev,
+                    msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '' }))
+                }));
+            };
+
+            const handleChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                
+                // Input Sanitization: Strip invalid characters before they enter state
+                let finalValue = type === 'checkbox' ? checked : value;
+                if (type === 'number') {
+                    finalValue = finalValue.replace(/[^0-9.-]/g, '');
+                }
+
+                setData(prev => ({ 
+                    ...prev, 
+                    [name]: finalValue 
+                }));
+            };
+
+            const handleHeadChange = (index, field, value) => {
+                const newHeads = [...data.msHeads];
+                newHeads[index][field] = value;
+                setData(prev => ({ ...prev, msHeads: newHeads }));
+            };
+
+            const metrics = useMemo(() => {
+                const parse = (val) => (val === '' ? NaN : parseFloat(val));
+                const rt = parse(data.returnTemp), st = parse(data.supplyTemp);
+                const sst = parse(data.suctionSatTemp), slt = parse(data.suctionLineTemp);
+                const lst = parse(data.liquidSatTemp), llt = parse(data.liquidLineTemp);
+
+                let deltaT = NaN;
+                const heatingModes = ['Heating', 'Gas Heat', 'Electric Strip Heat'];
+                const validOperation = ['Cooling', ...heatingModes].includes(data.operationalMode);
+
+                if (!isNaN(rt) && !isNaN(st) && validOperation) {
+                    deltaT = heatingModes.includes(data.operationalMode) ? st - rt : rt - st;
+                }
+
+                let superheat = NaN;
+                if (!isNaN(slt) && !isNaN(sst)) superheat = slt - sst;
+
+                let subcooling = NaN;
+                if (!isNaN(lst) && !isNaN(llt)) subcooling = lst - llt;
+
+                return { deltaT, superheat, subcooling };
+            }, [data.returnTemp, data.supplyTemp, data.suctionSatTemp, data.suctionLineTemp, data.liquidSatTemp, data.liquidLineTemp, data.operationalMode]);
+
+            const generateExportText = () => {
+                const m = metrics;
+                const f = (val, unit) => isNaN(val) || val === '' ? 'N/A' : `${val}${unit}`;
+                const sel = (val) => val === '' ? 'Not Selected' : val;
+                
+                let text = `HVAC SYSTEM DATA COLLECTION
+Date: ${new Date().toLocaleDateString()}
+Job/Customer: ${data.jobName || 'Unspecified'}
+Model Number: ${data.modelNumber || 'N/A'}
+Serial Number: ${data.serialNumber || 'N/A'}
+Outdoor Unit: ${sel(data.outdoorUnitType)}
+${isPackageUnit ? `Package Type: ${sel(data.packageUnitType)}\nHeating Type: ${sel(data.heatingType)}\nTonnage Rating: ${data.tonnageRating || 'N/A'}` : isMiniSplit ? `Outdoor Size: ${data.msOutdoorSize || 'N/A'}\nHeads Configured: ${data.msHeadCount}` : `Indoor Unit: ${sel(data.indoorUnitType)}\nTonnage Rating: ${data.tonnageRating || 'N/A'}`}
+Operational Mode: ${sel(data.operationalMode)}`;
+
+                if (isMiniSplit && parseInt(data.msHeadCount) > 0) {
+                    text += `\nINDOOR HEAD CONFIGURATION:`;
+                    for(let i=0; i < parseInt(data.msHeadCount); i++) {
+                        text += `\n- Head ${i+1}: ${sel(data.msHeads[i].type)} (${data.msHeads[i].size || 'N/A'})
+  M/N: ${data.msHeads[i].model || 'N/A'}
+  S/N: ${data.msHeads[i].serial || 'N/A'}`;
+                    }
+                }
+
+                if (showRefrigerantDetails) {
+                    text += `\nRefrigerant: ${data.refrigerant === 'Other' ? (data.customRefrigerant || 'Not Specified') : sel(data.refrigerant)}`;
+                    if (!isMiniSplit) {
+                        text += `\nMetering Device: ${sel(data.meteringDevice)}`;
+                    }
+                }
+
+                text += `\n\nAIRFLOW DATA
+Return Temp (DB): ${f(data.returnTemp, tempUnit)}
+Supply Temp (DB): ${f(data.supplyTemp, tempUnit)}
+Calculated Delta T: ${f(m.deltaT, tempUnit)}${!isMiniSplit ? `
+Supply Static Pressure: ${f(data.supplyStatic, staticUnit)}
+Return Static Pressure: ${f(data.returnStatic, staticUnit)}` : ''}`;
+
+                if (isMiniSplit) {
+                    text += `\n\nMINI-SPLIT DIAGNOSTICS
+Indoor Error Code: ${data.msIndoorError || 'None'}
+Outdoor Error Code: ${data.msOutdoorError || 'None'}
+Setpoint vs Room: ${data.msSetpoint || 'N/A'} set / ${data.msRoomTemp || 'N/A'}${tempUnit}
+Comm Voltage: ${f(data.msCommVoltage, 'V')}
+Indoor Power Voltage: ${f(data.msIndoorPower, 'V')}
+Comp. Frequency: ${f(data.msFrequency, ' Hz')}
+Flare Leak Check: ${sel(data.msFlareLeak)}
+Blower Wheel Condition: ${sel(data.msBlowerWheel)}
+Drain Slope/Flow Test: ${sel(data.msDrainTest)}`;
+                }
+
+                if (isGasAvailable) {
+                    text += `\n\nGAS HEATING DATA
+Inlet Gas Static: ${f(data.inletGasStatic, staticUnit)}
+Inlet Gas Load: ${f(data.inletGasLoad, staticUnit)}
+Manifold Firing: ${f(data.manifoldPressure, staticUnit)}
+
+COMBUSTION & VENTING
+Inducer Amps: ${f(data.inducerAmps, 'A')}
+Induced Draft Pressure: ${f(data.inducedDraftPressure, staticUnit)}
+Pressure Switch Make Point: ${f(data.pressureSwitchPoint, staticUnit)}
+
+GAS PERFORMANCE TEMPS
+Return Air Temp: ${f(data.gasReturnTemp, tempUnit)}
+Supply Air Temp: ${f(data.gasSupplyTemp, tempUnit)}`;
+                }
+
+                if (showOutdoorData) {
+                    text += `\n\nREFRIGERANT CIRCUIT DATA
+Outdoor Ambient Temp: ${f(data.outdoorAmbient, tempUnit)}
+
+Low Side (Suction):
+- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}
+- Line Temp: ${f(data.suctionLineTemp, tempUnit)}
+- Calculated Superheat: ${f(m.superheat, tempUnit)}
+
+High Side (Liquid):
+- Saturation Temp (LSAT): ${f(data.liquidSatTemp, tempUnit)}
+- Line Temp: ${f(data.liquidLineTemp, tempUnit)}
+- Calculated Subcooling: ${f(m.subcooling, tempUnit)}`;
+                }
+
+                text += `\n\nELECTRICAL DATA
+Line Voltage (Under Load): ${f(data.lineVoltage, 'V')}${!isMiniSplit ? `
+Control Voltage (Secondary): ${f(data.controlVoltage, 'V')}` : ''}
+${showOutdoorData && !isMiniSplit ? `Compressor Amps: ${f(data.compressorAmps, 'A')}
+Outdoor Fan Amps: ${f(data.fanAmps, 'A')}
+` : ''}${!isMiniSplit ? `Indoor Blower Amps: ${f(data.blowerAmps, 'A')}` : ''}`;
+
+                if (!isMiniSplit) {
+                    text += `\n\nCAPACITOR READINGS
+${isPackageUnit ? 'Blower Run Capacitor' : 'Indoor Blower Cap'}: ${data.indoorECM ? 'ECM Motor (No Cap)' : f(data.indoorCap, ' µF')}`;
+                    if (hasOutdoorUnit) {
+                        text += `\n${isPackageUnit ? 'Comp/Fan Cap Type' : 'Outdoor Cap Type'}: ${data.oduCapType || 'Not Selected'}
+${data.oduCapType === 'Dual' ? `${isPackageUnit ? 'Comp/Fan Dual Herm' : 'Outdoor Herm'}: ${f(data.oduCapHerm, ' µF')}\n${isPackageUnit ? 'Comp/Fan Dual Fan' : 'Outdoor Fan'}: ${f(data.oduCapFan, ' µF')}` : 
+  data.oduCapType === 'Single' ? `${isPackageUnit ? 'Comp Run Cap' : 'Outdoor Comp'}: ${f(data.oduCapComp, ' µF')}\n${isPackageUnit ? 'Fan Run Cap' : 'Outdoor Fan'}: ${data.oduFanECM ? 'ECM Motor (No Cap)' : f(data.oduCapFan, ' µF')}` : 'Outdoor Cap: N/A'}`;
+                    }
+                }
+
+                if (isAuxAvailable) {
+                    text += `\n\nAUX HEATING DATA
+Heater Kit Amps: ${f(data.heaterKitAmps, 'A')}
+Heater Kit Voltage: ${f(data.heaterKitVoltage, 'V')}`;
+                }
+
+                text += `\n\nADDITIONAL NOTES
+${data.notes || 'None'}`;
+
+                return text;
+            };
+
+            const handleCopy = () => {
+                const text = generateExportText();
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                    }).catch(err => fallbackCopy(text));
+                } else {
+                    fallbackCopy(text);
+                }
+            };
+
+            const fallbackCopy = (text) => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                } catch (err) {
+                    console.error('Copy failed', err);
+                }
+                document.body.removeChild(textArea);
+            };
+
+            return (
+                <div className="min-h-screen font-sans text-gray-800 pb-8 sm:pb-0">
+                    <div className="max-w-3xl mx-auto bg-white sm:rounded-2xl sm:shadow-xl overflow-hidden relative sm:my-4 flex flex-col min-h-[90vh]">
+                        
+                        {/* Reset Confirmation Modal */}
+                        {showConfirmReset && (
+                            <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl">
+                                    <h3 className="text-lg font-bold text-gray-900 mb-2">Clear Form?</h3>
+                                    <p className="text-sm text-gray-600 mb-6">Are you sure you want to start a new job? This will erase all currently entered data.</p>
+                                    <div className="flex gap-3 justify-end">
+                                        <button onClick={() => setShowConfirmReset(false)} className="px-4 py-2 rounded-lg font-medium text-gray-600 hover:bg-gray-100 transition-colors">Cancel</button>
+                                        <button onClick={handleReset} className="px-4 py-2 rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 transition-colors">Clear Data</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Header */}
+                        <div className="bg-slate-800 text-white p-4 sm:p-6 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Activity className="w-6 h-6 text-blue-400" />
+                                <h1 className="text-lg sm:text-xl font-bold tracking-wide">HVAC Data Collector</h1>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setIsMetric(!isMetric)}
+                                    className="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors border border-slate-600 tracking-widest uppercase"
+                                >
+                                    {isMetric ? 'Metric' : 'Imperial'}
+                                </button>
+                                <button 
+                                    onClick={() => setShowConfirmReset(true)}
+                                    className="flex items-center gap-2 text-sm font-medium bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                                >
+                                    <RotateCcw className="w-4 h-4" /> <span className="hidden sm:inline">New Job</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Navigation */}
+                        <div className="flex border-b border-gray-200 bg-gray-50">
+                            <button 
+                                onClick={() => setActiveTab('data')}
+                                className={`flex-1 py-3 px-4 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors ${activeTab === 'data' ? 'border-blue-500 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <Settings2 className="w-4 h-4" /> Data Entry
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('export')}
+                                className={`flex-1 py-3 px-4 text-sm font-medium flex items-center justify-center gap-2 border-b-2 transition-colors ${activeTab === 'export' ? 'border-blue-500 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <FileText className="w-4 h-4" /> Export
+                            </button>
+                        </div>
+
+                        <div className="p-4 sm:p-6 flex-1 overflow-auto">
+                            
+                            {/* TAB 1: DATA ENTRY */}
+                            {activeTab === 'data' && (
+                                <div className="space-y-6">
+                                    <section className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                                        <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                            <ClipboardCopy className="w-4 h-4 text-gray-400" /> System Details
+                                        </h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <TextInput label="Customer / Job Name" name="jobName" placeholder="e.g. Smith Residence" data={data} onChange={handleChange} />
+                                            <TextInput label="Model Number" name="modelNumber" placeholder="e.g. GSXC18..." data={data} onChange={handleChange} />
+                                            <TextInput label="Serial Number" name="serialNumber" placeholder="e.g. 1912..." data={data} onChange={handleChange} />
+                                            
+                                            {/* Progressive Disclosure Divider */}
+                                            <div className="col-span-1 md:col-span-2 pt-4 mt-2 border-t border-gray-100">
+                                                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Hardware Configuration</h3>
+                                            </div>
+
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-semibold text-gray-600 mb-1">Outdoor Unit</label>
+                                                <InlineSelect name="outdoorUnitType" value={data.outdoorUnitType} onChange={handleChange}>
+                                                    <option value="">(MAKE A SELECTION)</option>
+                                                    <option value="Air Conditioner" className="text-gray-800 font-normal">Air Conditioner</option>
+                                                    <option value="Heat Pump" className="text-gray-800 font-normal">Heat Pump</option>
+                                                    <option value="Package Unit" className="text-gray-800 font-normal">Package Unit</option>
+                                                    <option value="Mini-Split" className="text-gray-800 font-normal">Mini-Split</option>
+                                                    <option value="None" className="text-gray-800 font-normal">None</option>
+                                                </InlineSelect>
+                                            </div>
+
+                                            {hasOutdoorUnit && !isMiniSplit && (
+                                                <div className="flex flex-col animate-in fade-in duration-300">
+                                                    <label className="text-xs font-semibold text-gray-600 mb-1">Tonnage Rating</label>
+                                                    <InlineSelect name="tonnageRating" value={data.tonnageRating} onChange={handleChange}>
+                                                        <option value="">(SELECT TONNAGE)</option>
+                                                        <option value="1.5 Ton" className="text-gray-800 font-normal">1.5 Ton</option>
+                                                        <option value="2.0 Ton" className="text-gray-800 font-normal">2.0 Ton</option>
+                                                        <option value="2.5 Ton" className="text-gray-800 font-normal">2.5 Ton</option>
+                                                        <option value="3.0 Ton" className="text-gray-800 font-normal">3.0 Ton</option>
+                                                        <option value="3.5 Ton" className="text-gray-800 font-normal">3.5 Ton</option>
+                                                        <option value="4.0 Ton" className="text-gray-800 font-normal">4.0 Ton</option>
+                                                        <option value="5.0 Ton" className="text-gray-800 font-normal">5.0 Ton</option>
+                                                    </InlineSelect>
+                                                </div>
+                                            )}
+
+                                            {isPackageUnit ? (
+                                                <>
+                                                    <div className="flex flex-col">
+                                                        <label className="text-xs font-semibold text-gray-600 mb-1">Package Unit Type</label>
+                                                        <InlineSelect name="packageUnitType" value={data.packageUnitType} onChange={handleChange}>
+                                                            <option value="">(MAKE A SELECTION)</option>
+                                                            <option value="Air Conditioner" className="text-gray-800 font-normal">Air Conditioner</option>
+                                                            <option value="Heat Pump" className="text-gray-800 font-normal">Heat Pump</option>
+                                                        </InlineSelect>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <label className="text-xs font-semibold text-gray-600 mb-1">Heating Type</label>
+                                                        <InlineSelect name="heatingType" value={data.heatingType} onChange={handleChange}>
+                                                            <option value="">(MAKE A SELECTION)</option>
+                                                            <option value="Gas Heat" className="text-gray-800 font-normal">Gas Heat</option>
+                                                            <option value="Electric Strip Heat" className="text-gray-800 font-normal">Electric Strip Heat</option>
+                                                            {data.packageUnitType === 'Heat Pump' ? (
+                                                                <option value="Heat Pump Only" className="text-gray-800 font-normal">Heat Pump Only</option>
+                                                            ) : data.packageUnitType === 'Air Conditioner' ? (
+                                                                <option value="Air Conditioner Only" className="text-gray-800 font-normal">Air Conditioner Only</option>
+                                                            ) : (
+                                                                <option value="None" className="text-gray-800 font-normal">None</option>
+                                                            )}
+                                                        </InlineSelect>
+                                                    </div>
+                                                </>
+                                            ) : isMiniSplit ? (
+                                                <>
+                                                    <TextInput label="Outdoor Unit Size" name="msOutdoorSize" placeholder="e.g. 36k / 3 Ton" data={data} onChange={handleChange} />
+                                                    <div className="flex flex-col">
+                                                        <label className="text-xs font-semibold text-gray-600 mb-1">Number of Heads</label>
+                                                        <InlineSelect name="msHeadCount" value={data.msHeadCount} onChange={handleChange}>
+                                                            <option value="0" className="text-gray-800 font-normal">0</option>
+                                                            <option value="1" className="text-gray-800 font-normal">1</option>
+                                                            <option value="2" className="text-gray-800 font-normal">2</option>
+                                                            <option value="3" className="text-gray-800 font-normal">3</option>
+                                                            <option value="4" className="text-gray-800 font-normal">4</option>
+                                                            <option value="5" className="text-gray-800 font-normal">5</option>
+                                                        </InlineSelect>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs font-semibold text-gray-600 mb-1">Indoor Unit</label>
+                                                    <InlineSelect name="indoorUnitType" value={data.indoorUnitType} onChange={handleChange}>
+                                                        <option value="">(MAKE A SELECTION)</option>
+                                                        <option value="Gas Furnace" className="text-gray-800 font-normal">Gas Furnace</option>
+                                                        <option value="Air Handler" className="text-gray-800 font-normal">Air Handler</option>
+                                                        <option value="Air Handler w/Heat Strips" className="text-gray-800 font-normal">Air Handler w/Heat Strips</option>
+                                                    </InlineSelect>
+                                                </div>
+                                            )}
+
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-semibold text-gray-600 mb-1">Operational Mode</label>
+                                                <InlineSelect name="operationalMode" value={data.operationalMode} onChange={handleChange}>
+                                                    <option value="">(MAKE A SELECTION)</option>
+                                                    <option value="Cooling" className="text-gray-800 font-normal">Cooling</option>
+                                                    {isHeatPumpAvailable && <option value="Heating" className="text-gray-800 font-normal">Heating (Heat Pump)</option>}
+                                                    {isGasAvailable && <option value="Gas Heat" className="text-gray-800 font-normal">Gas Heat</option>}
+                                                    {isAuxAvailable && <option value="Electric Strip Heat" className="text-gray-800 font-normal">Electric Strip Heat</option>}
+                                                    {isHeatPumpAvailable && <option value="Defrost" className="text-gray-800 font-normal">Defrost</option>}
+                                                    <option value="Fan Only" className="text-gray-800 font-normal">Fan Only</option>
+                                                    <option value="Off" className="text-gray-800 font-normal">Off / Static</option>
+                                                    <option value="Non-Operative" className="text-gray-800 font-normal">Non-Operative</option>
+                                                </InlineSelect>
+                                            </div>
+
+                                            {showRefrigerantDetails && (
+                                                <>
+                                                    <div className="flex flex-col">
+                                                        <label className="text-xs font-semibold text-gray-600 mb-1">Refrigerant</label>
+                                                        <InlineSelect name="refrigerant" value={data.refrigerant} onChange={handleChange}>
+                                                            <option value="">(MAKE A SELECTION)</option>
+                                                            <option value="R-410A" className="text-gray-800 font-normal">R-410A</option>
+                                                            <option value="R-22" className="text-gray-800 font-normal">R-22</option>
+                                                            <option value="R-32" className="text-gray-800 font-normal">R-32</option>
+                                                            <option value="R-454B" className="text-gray-800 font-normal">R-454B</option>
+                                                            <option value="Other" className="text-gray-800 font-normal">Other (Specify)</option>
+                                                        </InlineSelect>
+                                                    </div>
+                                                    {data.refrigerant === 'Other' && (
+                                                        <div className="flex flex-col">
+                                                            <TextInput label="Specify Refrigerant" name="customRefrigerant" placeholder="e.g. R-134a" data={data} onChange={handleChange} />
+                                                        </div>
+                                                    )}
+                                                    {!isMiniSplit && (
+                                                        <div className="flex flex-col">
+                                                            <label className="text-xs font-semibold text-gray-600 mb-1">Metering Device</label>
+                                                            <InlineSelect name="meteringDevice" value={data.meteringDevice} onChange={handleChange}>
+                                                                <option value="">(MAKE A SELECTION)</option>
+                                                                <option value="TXV" className="text-gray-800 font-normal">TXV</option>
+                                                                <option value="EEV" className="text-gray-800 font-normal">EEV</option>
+                                                                <option value="Piston" className="text-gray-800 font-normal">Piston / Fixed Orifice</option>
+                                                            </InlineSelect>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Dynamic Heads Section */}
+                                        {isMiniSplit && parseInt(data.msHeadCount) > 0 && (
+                                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h3 className="text-xs font-bold text-blue-600 uppercase">Indoor Head Configuration</h3>
+                                                    <button onClick={handleClearHeads} className="text-[10px] font-bold text-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors uppercase">Clear Zones</button>
+                                                </div>
+                                                <div className="space-y-6">
+                                                    {Array.from({length: parseInt(data.msHeadCount)}).map((_, i) => (
+                                                        <div key={i} className="p-4 bg-blue-50/30 rounded-xl border border-blue-100 space-y-3 shadow-sm">
+                                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Head Unit {i+1}</p>
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Type</label>
+                                                                    <select 
+                                                                        value={data.msHeads[i].type} 
+                                                                        onChange={(e) => handleHeadChange(i, 'type', e.target.value)}
+                                                                        className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none ${data.msHeads[i].type === '' ? 'border-red-400 text-red-600 font-bold' : 'border-gray-200 text-gray-800'}`}
+                                                                    >
+                                                                        <option value="">(SELECT)</option>
+                                                                        <option value="Wall Mount" className="text-gray-800 font-normal">Wall Mount</option>
+                                                                        <option value="Ceiling Cassette" className="text-gray-800 font-normal">Ceiling Cassette</option>
+                                                                        <option value="Floor Mount" className="text-gray-800 font-normal">Floor Mount</option>
+                                                                        <option value="Concealed Ducted" className="text-gray-800 font-normal">Concealed Ducted</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Size</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="e.g. 9k / 12k"
+                                                                        value={data.msHeads[i].size}
+                                                                        onChange={(e) => handleHeadChange(i, 'size', e.target.value)}
+                                                                        className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none ${data.msHeads[i].size === '' ? 'border-red-300' : 'border-gray-200'}`}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Model #</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="M/N"
+                                                                        value={data.msHeads[i].model}
+                                                                        onChange={(e) => handleHeadChange(i, 'model', e.target.value)}
+                                                                        className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none ${data.msHeads[i].model === '' ? 'border-red-300' : 'border-gray-200'}`}
+                                                                    />
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Serial #</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="S/N"
+                                                                        value={data.msHeads[i].serial}
+                                                                        onChange={(e) => handleHeadChange(i, 'serial', e.target.value)}
+                                                                        className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none ${data.msHeads[i].serial === '' ? 'border-red-300' : 'border-gray-200'}`}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    <section className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 shadow-sm">
+                                        <h2 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                            <Wind className="w-4 h-4 text-blue-500" /> Airflow & Static Pressure
+                                        </h2>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <NumInput label="Return Temp (DB)" name="returnTemp" placeholder="75" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                            <NumInput label="Supply Temp (DB)" name="supplyTemp" placeholder="55" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                            {!isMiniSplit && (
+                                                <>
+                                                    <NumInput label="Return Static" name="returnStatic" placeholder="0.25" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Supply Static" name="supplyStatic" placeholder="0.30" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </>
+                                            )}
+                                        </div>
+                                        {!isNaN(metrics.deltaT) && (
+                                            <div className="mt-2 text-sm bg-white p-3 rounded border border-blue-100 flex justify-between items-center">
+                                                <span className="font-medium text-gray-600">Calculated Delta T:</span>
+                                                <span className="font-bold text-blue-600 text-lg">{metrics.deltaT.toFixed(1)} {tempUnit}</span>
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    {isMiniSplit && (
+                                        <section className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 shadow-sm animate-in fade-in duration-500">
+                                            <h2 className="text-sm font-bold text-indigo-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                                <Monitor className="w-4 h-4 text-indigo-500" /> Mini-Split Diagnostics & Maintenance
+                                            </h2>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mb-4">
+                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
+                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Diagnostics & Controls</h3>
+                                                    <TextInput label="IDU Error Code" name="msIndoorError" placeholder="Blink count / Alpha" disabled={isNonOp} data={data} onChange={handleChange} />
+                                                    <TextInput label="ODU Error Code" name="msOutdoorError" placeholder="LED / Blink count" disabled={isNonOp} data={data} onChange={handleChange} />
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <NumInput label="Remote Setpoint" name="msSetpoint" placeholder="72" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        <NumInput label="Room Temp" name="msRoomTemp" placeholder="75" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    </div>
+                                                </div>
+                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
+                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Electrical & Communication</h3>
+                                                    <NumInput label="Comm Voltage (S1-S3 / S2-S3)" name="msCommVoltage" placeholder="24-60" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="IDU Power Supply" name="msIndoorPower" placeholder="230" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Comp. Frequency" name="msFrequency" placeholder="60" unit="Hz" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
+                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Flare Connection</h3>
+                                                    <SelectInput label="Leak Check Verification" name="msFlareLeak" options={[{val:'Pass',label:'Pass (Dry)'},{val:'Fail',label:'Fail (Leak Detected)'}]} disabled={isNonOp} data={data} onChange={handleChange} />
+                                                </div>
+                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
+                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Maintenance & Drainage</h3>
+                                                    <SelectInput label="Blower Wheel Condition" name="msBlowerWheel" options={[{val:'Clean',label:'Clean'},{val:'Moldy',label:'Moldy'},{val:'Impacted',label:'Impacted/Dirty'}]} disabled={isNonOp} data={data} onChange={handleChange} />
+                                                    <SelectInput label="Drain Slope/Flow Test" name="msDrainTest" options={[{val:'Pass',label:'Pass (Flowing)'},{val:'Fail',label:'Fail (Stalled/Slow)'}]} disabled={isNonOp} data={data} onChange={handleChange} />
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {isGasAvailable && (
+                                        <section className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 shadow-sm animate-in fade-in duration-500">
+                                            <h2 className="text-sm font-bold text-orange-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                                <Flame className="w-4 h-4 text-orange-500" /> Gas Heat Performance
+                                            </h2>
+                                            
+                                            <div className="p-3 bg-white rounded-lg border border-orange-100 mb-4">
+                                                <h3 className="text-xs font-bold text-orange-600 mb-3 border-b pb-1">Gas Pressure Data</h3>
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                    <NumInput label="Inlet Pressure (Static)" name="inletGasStatic" placeholder="7.0" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Inlet Pressure (Load)" name="inletGasLoad" placeholder="6.5" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Manifold (Firing)" name="manifoldPressure" placeholder="3.5" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 bg-white rounded-lg border border-orange-100 mb-4">
+                                                <h3 className="text-xs font-bold text-orange-600 mb-3 border-b pb-1">Combustion & Venting</h3>
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                    <NumInput label="Inducer Amps" name="inducerAmps" placeholder="0.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Induced Draft" name="inducedDraftPressure" placeholder="-1.2" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Pr. Switch Make" name="pressureSwitchPoint" placeholder="-0.85" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 bg-white rounded-lg border border-orange-100">
+                                                <h3 className="text-xs font-bold text-orange-600 mb-3 border-b pb-1">Temperature Performance</h3>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <NumInput label="Return Air Temp" name="gasReturnTemp" placeholder="70" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Supply Air Temp" name="gasSupplyTemp" placeholder="120" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {showOutdoorData && (
+                                        <section className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 shadow-sm">
+                                            <h2 className="text-sm font-bold text-emerald-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                                <Thermometer className="w-4 h-4 text-emerald-500" /> Refrigerant Circuit
+                                            </h2>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                                <NumInput label="Outdoor Ambient Temp" name="outdoorAmbient" placeholder="90" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                    <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Low Side (Suction)</h3>
+                                                    <NumInput label="Saturation Temp (VSAT)" name="suctionSatTemp" placeholder="40" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Line Temp" name="suctionLineTemp" placeholder="52" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                                <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                    <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">High Side (Liquid)</h3>
+                                                    <NumInput label="Saturation Temp (LSAT)" name="liquidSatTemp" placeholder="105" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Line Temp" name="liquidLineTemp" placeholder="95" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            </div>
+
+                                            {(!isNaN(metrics.superheat) || !isNaN(metrics.subcooling)) && (
+                                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                                    {!isNaN(metrics.superheat) && (
+                                                        <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
+                                                            <span className="font-medium text-gray-600 flex-1">Superheat:</span>
+                                                            <span className="font-bold text-emerald-600 text-lg">{metrics.superheat.toFixed(1)} {tempUnit}</span>
+                                                        </div>
+                                                    )}
+                                                    {!isNaN(metrics.subcooling) && (
+                                                        <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
+                                                            <span className="font-medium text-gray-600 flex-1">Subcooling:</span>
+                                                            <span className="font-bold text-emerald-600 text-lg">{metrics.subcooling.toFixed(1)} {tempUnit}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
+
+                                    <section className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 shadow-sm">
+                                        <h2 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                            <Zap className="w-4 h-4 text-amber-500" /> Electrical Data
+                                        </h2>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                            <div className="p-3 bg-white rounded-lg border border-amber-100">
+                                                <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Voltage Checks</h3>
+                                                <NumInput label="Line Voltage (Under Load)" name="lineVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                {!isMiniSplit && <NumInput label="Control Voltage (Secondary)" name="controlVoltage" placeholder="24" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />}
+                                            </div>
+                                            {!isMiniSplit && (
+                                                <div className="p-3 bg-white rounded-lg border border-amber-100">
+                                                    <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Motor Amperage</h3>
+                                                    {showOutdoorData && (
+                                                        <>
+                                                            <NumInput label="Compressor Amps" name="compressorAmps" placeholder="12.5" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <NumInput label="OD Fan Amps" name="fanAmps" placeholder="1.2" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        </>
+                                                    )}
+                                                    <NumInput label="ID Blower Amps" name="blowerAmps" placeholder="2.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {!isMiniSplit && (
+                                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                <div className="p-3 bg-white rounded-lg border border-amber-100">
+                                                    <div className="flex items-center justify-between border-b border-amber-100 mb-3 pb-1">
+                                                        <h3 className="text-xs font-bold text-amber-600">
+                                                            {isPackageUnit ? 'Blower Run Capacitor' : 'Indoor Capacitor'}
+                                                        </h3>
+                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                            <input type="checkbox" name="indoorECM" checked={data.indoorECM} onChange={handleChange} disabled={isNonOp} className="w-3.5 h-3.5 accent-amber-600" />
+                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">ECM Motor</span>
+                                                        </label>
+                                                    </div>
+                                                    <NumInput label="Blower Run Capacitor" name="indoorCap" placeholder="5.0" unit="µF" disabled={isNonOp || data.indoorECM} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                </div>
+
+                                                {hasOutdoorUnit && (
+                                                    <div className="p-3 bg-white rounded-lg border border-amber-100 animate-in fade-in duration-300">
+                                                        <h3 className="text-xs font-bold text-amber-600 mb-3 border-b border-amber-100 pb-1">
+                                                            {isPackageUnit ? 'Compressor and Fan Capacitor' : 'Outdoor Capacitor'}
+                                                        </h3>
+                                                        <SelectInput 
+                                                            label="Capacitor Configuration" 
+                                                            name="oduCapType" 
+                                                            options={[{val:'Dual',label:'Dual Run'},{val:'Single',label:'Single Run / Separate'}]} 
+                                                            disabled={isNonOp} 
+                                                            data={data} onChange={handleChange}
+                                                        />
+                                                        {data.oduCapType === 'Dual' && (
+                                                            <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
+                                                                <NumInput label="Herm (Comp)" name="oduCapHerm" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <NumInput label="Fan" name="oduCapFan" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                        )}
+                                                        {data.oduCapType === 'Single' && (
+                                                            <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
+                                                                <NumInput label="Comp Cap" name="oduCapComp" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <div className="flex flex-col">
+                                                                    <div className="flex items-center justify-between mb-1">
+                                                                        <label className="text-[10px] font-bold text-gray-500">FAN CAP</label>
+                                                                        <label className="flex items-center gap-1 cursor-pointer">
+                                                                            <input type="checkbox" name="oduFanECM" checked={data.oduFanECM} onChange={handleChange} disabled={isNonOp} className="w-3 h-3 accent-amber-600" />
+                                                                            <span className="text-[8px] font-bold text-gray-400 uppercase leading-none">ECM</span>
+                                                                        </label>
+                                                                    </div>
+                                                                    <NumInput label="" name="oduCapFan" placeholder="5.0" unit="µF" disabled={isNonOp || data.oduFanECM} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                
+                                                {isAuxAvailable ? (
+                                                    <div className="p-3 bg-white rounded-lg border border-amber-100 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Aux / Electric Heat</h3>
+                                                        <NumInput label="Heater Kit Amps" name="heaterKitAmps" placeholder="20" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        <NumInput label="Heater Kit Voltage" name="heaterKitVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    </div>
+                                                ) : (
+                                                    <div className="hidden md:block"></div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    <section className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                                        <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                            <FileText className="w-4 h-4 text-gray-400" /> Additional Service Notes
+                                        </h2>
+                                        <textarea
+                                            name="notes"
+                                            value={data.notes}
+                                            onChange={handleChange}
+                                            placeholder="Enter any visual observations, parts needed, or summary of work done..."
+                                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 min-h-[120px] resize-none"
+                                        ></textarea>
+                                    </section>
+                                    
+                                    {/* Persistent FAB for Data Copy */}
+                                    <div className="sticky bottom-4 pt-4 mt-8 z-40">
+                                        <button
+                                            onClick={handleCopy}
+                                            disabled={!isExportReady}
+                                            className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest text-sm shadow-2xl transition-all flex justify-center items-center gap-3 active:scale-[0.98] ${!isExportReady ? 'bg-slate-300 text-slate-500 shadow-none cursor-not-allowed' : copied ? 'bg-green-500 shadow-green-200 text-white' : 'bg-blue-600 shadow-blue-200 text-white'}`}
+                                        >
+                                            {copied ? (
+                                                <><CheckCircle2 className="w-5 h-5" /> Data Copied!</>
+                                            ) : !isExportReady ? (
+                                                <><FileText className="w-5 h-5" /> Enter Admin Data to Export</>
+                                            ) : (
+                                                <><ClipboardCopy className="w-5 h-5" /> Quick Copy Data</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB 2: EXPORT */}
+                            {activeTab === 'export' && (
+                                <div className="space-y-4 flex flex-col h-full">
+                                    <div className="flex flex-col mb-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-sm font-semibold text-gray-700">Preview Data</label>
+                                            <span className="text-[10px] text-gray-500 font-medium bg-gray-100 px-2 py-0.5 rounded">NotebookLM Optimized</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="relative flex-grow">
+                                        <div className="absolute inset-0 bg-slate-800 rounded-xl p-4 overflow-auto shadow-inner">
+                                            <pre className="text-green-400 font-mono text-xs sm:text-sm whitespace-pre-wrap">{generateExportText()}</pre>
+                                        </div>
+                                        <div className="opacity-0 pointer-events-none p-4 whitespace-pre-wrap font-mono text-xs sm:text-sm">{generateExportText()}</div>
+                                    </div>
+
+                                    <button
+                                        onClick={handleCopy}
+                                        disabled={!isExportReady}
+                                        className={`w-full py-4 rounded-xl font-bold transition-all flex justify-center items-center gap-2 ${!isExportReady ? 'bg-slate-300 text-slate-500 shadow-none cursor-not-allowed' : copied ? 'bg-green-500 text-white shadow-lg' : 'bg-blue-600 text-white shadow-lg active:scale-[0.98]'}`}
+                                    >
+                                        {copied ? (
+                                            <><CheckCircle2 className="w-5 h-5" /> Copied to Clipboard!</>
+                                        ) : !isExportReady ? (
+                                            <><FileText className="w-5 h-5" /> Required Admin Data Missing</>
+                                        ) : (
+                                            <><ClipboardCopy className="w-5 h-5" /> Copy Data for NotebookLM</>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HvacTroubleshooter />);
+    </script>
+</body>
+</html>
