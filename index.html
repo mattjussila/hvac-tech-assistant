@@ -131,7 +131,7 @@
             customRefrigerant: '', meteringDevice: '', returnTemp: '', supplyTemp: '', 
             supplyStatic: '', returnStatic: '',
             outdoorAmbient: '', suctionSatTemp: '', suctionLineTemp: '', liquidSatTemp: '', 
-            liquidLineTemp: '', dischargePressure: '', dischargeLineTemp: '', compressorAmps: '', fanAmps: '', blowerAmps: '', 
+            liquidLineTemp: '', dischargeSatTemp: '', dischargeLineTemp: '', compressorAmps: '', fanAmps: '', blowerAmps: '', 
             lineVoltage: '', controlVoltage: '', heaterKitAmps: '', heaterKitVoltage: '',
             inletGasStatic: '', inletGasLoad: '', manifoldPressure: '',
             inducerAmps: '', inducedDraftPressure: '', pressureSwitchPoint: '',
@@ -276,33 +276,17 @@
             const metrics = useMemo(() => {
                 const parse = (val) => (val === '' ? NaN : parseFloat(val));
                 const rt = parse(data.returnTemp), st = parse(data.supplyTemp);
-                const sst = parse(data.suctionSatTemp), slt = parse(data.suctionLineTemp);
-                const lst = parse(data.liquidSatTemp), llt = parse(data.liquidLineTemp);
-                const dlt = parse(data.dischargeLineTemp);
 
                 let deltaT = NaN;
                 const heatingModes = ['Heating', 'Gas Heat', 'Electric Strip Heat'];
                 const validOperation = ['Cooling', ...heatingModes].includes(data.operationalMode);
-                const isHeatingRefrigerant = data.operationalMode === 'Heating';
 
                 if (!isNaN(rt) && !isNaN(st) && validOperation) {
                     deltaT = heatingModes.includes(data.operationalMode) ? st - rt : rt - st;
                 }
 
-                let superheat = NaN;
-                if (!isNaN(slt) && !isNaN(sst)) superheat = slt - sst;
-
-                let subcooling = NaN;
-                if (!isNaN(lst) && !isNaN(llt)) subcooling = lst - llt;
-
-                let dischargeSuperheat = NaN;
-                if (isHeatingRefrigerant && !isNaN(lst) && !isNaN(dlt)) {
-                    // CSAT is derived from the high side liquid saturation pressure
-                    dischargeSuperheat = dlt - lst; 
-                }
-
-                return { deltaT, superheat, subcooling, dischargeSuperheat };
-            }, [data.returnTemp, data.supplyTemp, data.suctionSatTemp, data.suctionLineTemp, data.liquidSatTemp, data.liquidLineTemp, data.dischargeLineTemp, data.operationalMode]);
+                return { deltaT };
+            }, [data.returnTemp, data.supplyTemp, data.operationalMode]);
 
             const generateExportContent = () => {
                 const m = metrics;
@@ -386,10 +370,9 @@
                     if (showRefrigerantCircuit) {
                         text += `\n### 🌡️ REFRIGERANT CIRCUIT DATA\n`;
                         text += `**Outdoor Ambient Temp:** ${f(data.outdoorAmbient, tempUnit)}\n\n`;
-                        text += `**Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):**\n- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}\n- Line Temp: ${f(data.suctionLineTemp, tempUnit)}\n- **Calculated Superheat:** ${f(m.superheat, tempUnit)}\n\n`;
-                        text += `**High Side (Liquid):**\n- Saturation Temp (${isHeatingRefrigerant ? 'CSAT' : 'LSAT'}): ${f(data.liquidSatTemp, tempUnit)}\n- Line Temp: ${f(data.liquidLineTemp, tempUnit)}\n- **Calculated Subcooling:** ${f(m.subcooling, tempUnit)}\n\n`;
-                        text += `**Discharge (Hot Gas):**\n- Discharge Pressure: ${f(data.dischargePressure, pressureUnit)}\n- Discharge Line Temp: ${f(data.dischargeLineTemp, tempUnit)}\n`;
-                        if (isHeatingRefrigerant) text += `- **Calculated Discharge Superheat:** ${f(m.dischargeSuperheat, tempUnit)}\n`;
+                        text += `**Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):**\n- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}\n- Line Temp: ${f(data.suctionLineTemp, tempUnit)}\n\n`;
+                        text += `**High Side (Liquid):**\n- Saturation Temp (LSAT): ${f(data.liquidSatTemp, tempUnit)}\n- Line Temp: ${f(data.liquidLineTemp, tempUnit)}\n\n`;
+                        text += `**Discharge (Hot Gas):**\n- Saturation Temp (DSAT): ${f(data.dischargeSatTemp, tempUnit)}\n- Line Temp: ${f(data.dischargeLineTemp, tempUnit)}\n`;
                     }
 
                     text += `\n### ⚡ ELECTRICAL DATA\n`;
@@ -507,20 +490,14 @@ Outdoor Ambient Temp: ${f(data.outdoorAmbient, tempUnit)}
 Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):
 - Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}
 - Line Temp: ${f(data.suctionLineTemp, tempUnit)}
-- Calculated Superheat: ${f(m.superheat, tempUnit)}
 
 High Side (Liquid):
-- Saturation Temp (${isHeatingRefrigerant ? 'CSAT' : 'LSAT'}): ${f(data.liquidSatTemp, tempUnit)}
+- Saturation Temp (LSAT): ${f(data.liquidSatTemp, tempUnit)}
 - Line Temp: ${f(data.liquidLineTemp, tempUnit)}
-- Calculated Subcooling: ${f(m.subcooling, tempUnit)}
 
 Discharge (Hot Gas):
-- Discharge Pressure: ${f(data.dischargePressure, pressureUnit)}
-- Discharge Line Temp: ${f(data.dischargeLineTemp, tempUnit)}`;
-
-                    if (isHeatingRefrigerant) {
-                        text += `\n- Calculated Discharge Superheat: ${f(m.dischargeSuperheat, tempUnit)}`;
-                    }
+- Saturation Temp (DSAT): ${f(data.dischargeSatTemp, tempUnit)}
+- Line Temp: ${f(data.dischargeLineTemp, tempUnit)}`;
                 }
 
                 text += `\n\nELECTRICAL DATA
@@ -972,7 +949,7 @@ ${data.notes || 'None'}`;
                                                 </div>
                                                 <div className="p-3 bg-white rounded-lg border border-emerald-100">
                                                     <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">High Side (Liquid)</h3>
-                                                    <NumInput label={`Saturation Temp (${data.operationalMode === 'Heating' ? 'CSAT' : 'LSAT'})`} name="liquidSatTemp" placeholder="105" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Saturation Temp (LSAT)" name="liquidSatTemp" placeholder="105" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                     <NumInput label="Line Temp" name="liquidLineTemp" placeholder="95" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                 </div>
                                             </div>
@@ -980,33 +957,10 @@ ${data.notes || 'None'}`;
                                             <div className="mt-4 p-3 bg-white rounded-lg border border-emerald-100">
                                                 <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Discharge (Hot Gas)</h3>
                                                 <div className="grid grid-cols-2 gap-4">
-                                                    <NumInput label="Discharge Pressure" name="dischargePressure" placeholder="350" unit={pressureUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <NumInput label="Saturation Temp (DSAT)" name="dischargeSatTemp" placeholder="110" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                     <NumInput label="Discharge Line Temp" name="dischargeLineTemp" placeholder="160" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                 </div>
                                             </div>
-
-                                            {(!isNaN(metrics.superheat) || !isNaN(metrics.subcooling) || !isNaN(metrics.dischargeSuperheat)) && (
-                                                <div className="mt-4 grid grid-cols-2 gap-4">
-                                                    {!isNaN(metrics.superheat) && (
-                                                        <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
-                                                            <span className="font-medium text-gray-600 flex-1">Superheat:</span>
-                                                            <span className="font-bold text-emerald-600 text-lg">{metrics.superheat.toFixed(1)} {tempUnit}</span>
-                                                        </div>
-                                                    )}
-                                                    {!isNaN(metrics.subcooling) && (
-                                                        <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
-                                                            <span className="font-medium text-gray-600 flex-1">Subcooling:</span>
-                                                            <span className="font-bold text-emerald-600 text-lg">{metrics.subcooling.toFixed(1)} {tempUnit}</span>
-                                                        </div>
-                                                    )}
-                                                    {data.operationalMode === 'Heating' && !isNaN(metrics.dischargeSuperheat) && (
-                                                        <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm col-span-2">
-                                                            <span className="font-medium text-gray-600 flex-1">Discharge Superheat:</span>
-                                                            <span className="font-bold text-emerald-600 text-lg">{metrics.dischargeSuperheat.toFixed(1)} {tempUnit}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
                                         </section>
                                     )}
 
