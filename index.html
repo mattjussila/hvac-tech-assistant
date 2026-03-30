@@ -128,20 +128,21 @@
             jobName: '', outdoorModel: '', outdoorSerial: '', indoorModel: '', indoorSerial: '', tonnageRating: '',
             outdoorUnitType: '', packageUnitType: '', indoorUnitType: '', 
             heatingType: '', operationalMode: '', refrigerant: '', 
-            customRefrigerant: '', meteringDevice: '', returnTemp: '', supplyTemp: '', 
+            customRefrigerant: '', meteringDevice: '', returnTemp: '', supplyTemp: '', returnWetBulb: '', supplyWetBulb: '',
             supplyStatic: '', returnStatic: '',
             outdoorAmbient: '', suctionSatTemp: '', suctionLineTemp: '', liquidSatTemp: '', 
             liquidLineTemp: '', dischargeSatTemp: '', dischargeLineTemp: '', compressorAmps: '', fanAmps: '', blowerAmps: '', 
-            lineVoltage: '', controlVoltage: '', heaterKitAmps: '', heaterKitVoltage: '',
+            outdoorVoltageL1L2: '', outdoorVoltageL1GND: '', outdoorVoltageL2GND: '', 
+            indoorVoltageL1L2: '', indoorVoltageL1GND: '', indoorVoltageL2GND: '', 
+            controlVoltage: '', heaterKitAmps: '', heaterKitVoltage: '',
             inletGasStatic: '', inletGasLoad: '', manifoldPressure: '',
             inducerAmps: '', inducedDraftPressure: '', pressureSwitchPoint: '',
-            gasReturnTemp: '', gasSupplyTemp: '',
             msOutdoorSize: '', msHeadCount: '0', 
-            msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '' })),
+            msBaseCharge: '', msPrechargeLength: '', msLineLength: '', msChargeMultiplier: '', msTotalWeighedCharge: '', msRecoveredCharge: '',
+            msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '', voltageS2S3: '', returnTemp: '', supplyTemp: '', hasDiagnostics: false, errorCode: '', setpoint: '', roomTemp: '', customName: '', flareLeak: '', blowerWheel: '', drainTest: '' })),
             msIndoorError: '', msOutdoorError: '', msSetpoint: '', msRoomTemp: '',
-            msCommVoltage: '', msIndoorPower: '', msFrequency: '', msFlareLeak: '',
+            indoorCapRated: '', indoorCapActual: '', indoorECM: false, 
             msBlowerWheel: '', msDrainTest: '',
-            indoorCap: '', indoorECM: false, oduCapType: '', oduCapHerm: '', oduCapFan: '', oduFanECM: false, oduCapComp: '',
             notes: ''
         };
 
@@ -189,6 +190,9 @@
             const tempUnit = isMetric ? '°C' : '°F';
             const pressureUnit = isMetric ? ' kPa' : ' PSIG';
             const staticUnit = isMetric ? ' kPa' : ' in. w.c.';
+            const weightUnit = isMetric ? 'g' : 'oz';
+            const lengthUnit = isMetric ? 'm' : 'ft';
+            const multiplierUnit = isMetric ? 'g/m' : 'oz/ft';
 
             // Boolean Helpers for UI Logic
             const isMiniSplit = data.outdoorUnitType === 'Mini-Split';
@@ -196,15 +200,95 @@
             const hasOutdoorUnit = data.outdoorUnitType !== '' && data.outdoorUnitType !== 'None';
             const showRefrigerantDetails = hasOutdoorUnit;
             
-            const isGasAvailable = data.indoorUnitType === 'Gas Furnace' || (isPackageUnit && data.heatingType === 'Gas Heat');
-            const isAuxAvailable = (data.indoorUnitType === 'Air Handler w/Heat Strips' || (isPackageUnit && data.heatingType === 'Electric Strip Heat')) && !isMiniSplit;
+            const isGasAvailable = (!isPackageUnit && !isMiniSplit && data.indoorUnitType === 'Gas Furnace') || (isPackageUnit && data.heatingType === 'Gas Heat');
+            const isAuxAvailable = (!isPackageUnit && !isMiniSplit && data.indoorUnitType === 'Air Handler w/Heat Strips') || (isPackageUnit && data.heatingType === 'Electric Strip Heat');
             const isHeatPumpAvailable = data.outdoorUnitType === 'Heat Pump' || (isPackageUnit && data.packageUnitType === 'Heat Pump') || isMiniSplit;
             const isNonOp = data.operationalMode === 'Non-Operative';
+            const hasAnyUnitSelected = hasOutdoorUnit || (!isPackageUnit && !isMiniSplit && data.indoorUnitType !== '');
 
             // Thermodynamic Visibility Logic
             const isCompressorActiveOrIdle = ['Cooling', 'Heating', 'Defrost', 'Non-Operative', ''].includes(data.operationalMode);
-            const showRefrigerantCircuit = hasOutdoorUnit && !isMiniSplit && isCompressorActiveOrIdle;
+            const showRefrigerantCircuit = hasOutdoorUnit;
             const showOutdoorElectrical = hasOutdoorUnit && isCompressorActiveOrIdle;
+
+            // Global Unit Toggle & Conversion Matrix
+            const toggleUnits = () => {
+                setData(prev => {
+                    const next = { ...prev };
+                    
+                    const convertTemp = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? ((n - 32) * 5/9).toFixed(1) : ((n * 9/5) + 32).toFixed(1);
+                    };
+                    
+                    const convertPressure = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? (n * 6.89476).toFixed(1) : (n / 6.89476).toFixed(1);
+                    };
+                    
+                    const convertStatic = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? (n * 0.249089).toFixed(2) : (n / 0.249089).toFixed(2);
+                    };
+
+                    const convertLength = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? (n * 0.3048).toFixed(1) : (n / 0.3048).toFixed(1);
+                    };
+
+                    const convertWeight = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? (n * 28.3495).toFixed(1) : (n / 28.3495).toFixed(1);
+                    };
+
+                    const convertMultiplier = (val, toMetric) => {
+                        if (val === '') return '';
+                        const n = parseFloat(val);
+                        if (isNaN(n)) return val;
+                        return toMetric ? (n * 93.0101).toFixed(2) : (n / 93.0101).toFixed(2);
+                    };
+
+                    const toMetric = !isMetric;
+                    
+                    ['returnTemp', 'supplyTemp', 'returnWetBulb', 'supplyWetBulb', 'outdoorAmbient', 'suctionSatTemp', 'suctionLineTemp', 'liquidSatTemp', 'liquidLineTemp', 'dischargeSatTemp', 'dischargeLineTemp'].forEach(k => {
+                        next[k] = convertTemp(next[k], toMetric);
+                    });
+
+                    ['dischargePressure'].forEach(k => {
+                        next[k] = convertPressure(next[k], toMetric);
+                    });
+
+                    ['returnStatic', 'supplyStatic', 'inletGasStatic', 'inletGasLoad', 'manifoldPressure', 'inducedDraftPressure', 'pressureSwitchPoint'].forEach(k => {
+                        next[k] = convertStatic(next[k], toMetric);
+                    });
+
+                    ['msPrechargeLength', 'msLineLength'].forEach(k => { next[k] = convertLength(next[k], toMetric); });
+                    ['msBaseCharge', 'msTotalWeighedCharge', 'msRecoveredCharge'].forEach(k => { next[k] = convertWeight(next[k], toMetric); });
+                    ['msChargeMultiplier'].forEach(k => { next[k] = convertMultiplier(next[k], toMetric); });
+
+                    next.msHeads = next.msHeads.map(head => ({
+                        ...head,
+                        returnTemp: convertTemp(head.returnTemp, toMetric),
+                        supplyTemp: convertTemp(head.supplyTemp, toMetric),
+                        setpoint: convertTemp(head.setpoint, toMetric),
+                        roomTemp: convertTemp(head.roomTemp, toMetric)
+                    }));
+
+                    next.lastModified = new Date().toISOString();
+                    return next;
+                });
+                setIsMetric(!isMetric);
+            };
 
             // Auto-Save Effect for Multi-Job Management
             useEffect(() => {
@@ -247,7 +331,7 @@
             const handleClearHeads = () => {
                 setData(prev => ({
                     ...prev,
-                    msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '' }))
+                    msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '', voltageS2S3: '', returnTemp: '', supplyTemp: '', hasDiagnostics: false, errorCode: '', setpoint: '', roomTemp: '', customName: '', flareLeak: '', blowerWheel: '', drainTest: '' }))
                 }));
             };
 
@@ -276,6 +360,7 @@
             const metrics = useMemo(() => {
                 const parse = (val) => (val === '' ? NaN : parseFloat(val));
                 const rt = parse(data.returnTemp), st = parse(data.supplyTemp);
+                const rs = parse(data.returnStatic), ss = parse(data.supplyStatic);
 
                 let deltaT = NaN;
                 const heatingModes = ['Heating', 'Gas Heat', 'Electric Strip Heat'];
@@ -285,8 +370,30 @@
                     deltaT = heatingModes.includes(data.operationalMode) ? st - rt : rt - st;
                 }
 
-                return { deltaT };
-            }, [data.returnTemp, data.supplyTemp, data.operationalMode]);
+                let tesp = NaN;
+                if (!isNaN(rs) && !isNaN(ss)) {
+                    tesp = Math.abs(rs) + Math.abs(ss);
+                }
+
+                let msCalculatedCharge = NaN;
+                let msChargeDeviation = NaN;
+                const bc = parse(data.msBaseCharge);
+                const pl = parse(data.msPrechargeLength);
+                const ll = parse(data.msLineLength);
+                const cm = parse(data.msChargeMultiplier);
+
+                if (!isNaN(bc) && !isNaN(pl) && !isNaN(ll) && !isNaN(cm)) {
+                    const additionalCharge = Math.max(0, (ll - pl) * cm);
+                    msCalculatedCharge = bc + additionalCharge;
+                }
+
+                const rc = parse(data.msRecoveredCharge);
+                if (!isNaN(msCalculatedCharge) && !isNaN(rc)) {
+                    msChargeDeviation = rc - msCalculatedCharge;
+                }
+
+                return { deltaT, tesp, msCalculatedCharge, msChargeDeviation };
+            }, [data.returnTemp, data.supplyTemp, data.returnStatic, data.supplyStatic, data.operationalMode, data.msBaseCharge, data.msPrechargeLength, data.msLineLength, data.msChargeMultiplier, data.msRecoveredCharge]);
 
             const generateExportContent = () => {
                 const m = metrics;
@@ -331,9 +438,14 @@
                     text += `**Operational Mode:** ${sel(data.operationalMode)}\n`;
 
                     if (isMiniSplit && parseInt(data.msHeadCount) > 0) {
-                        text += `\n### 📦 INDOOR HEAD CONFIGURATION\n`;
+                        text += `\n### 📦 INDOOR UNIT HEAD CONFIGURATION & PERFORMANCE\n`;
                         for(let i=0; i < parseInt(data.msHeadCount); i++) {
-                            text += `- **Head ${i+1}:** ${sel(data.msHeads[i].type)} (${data.msHeads[i].size || 'N/A'})\n  - M/N: ${data.msHeads[i].model || 'N/A'} | S/N: ${data.msHeads[i].serial || 'N/A'}\n`;
+                            const headId = String.fromCharCode(65 + i);
+                            const nameLabel = data.msHeads[i].customName ? ` [${data.msHeads[i].customName}]` : '';
+                            text += `- **Head ${headId}${nameLabel}:** ${sel(data.msHeads[i].type)} (${data.msHeads[i].size || 'N/A'})\n  - M/N: ${data.msHeads[i].model || 'N/A'} | S/N: ${data.msHeads[i].serial || 'N/A'}\n  - Airflow: Return ${f(data.msHeads[i].returnTemp, tempUnit)} / Supply ${f(data.msHeads[i].supplyTemp, tempUnit)}\n  - Maintenance: Flare: ${sel(data.msHeads[i].flareLeak)} | Blower: ${sel(data.msHeads[i].blowerWheel)} | Drain: ${sel(data.msHeads[i].drainTest)}\n`;
+                            if (data.msHeads[i].hasDiagnostics) {
+                                text += `  - Diagnostics: IDU Error: ${data.msHeads[i].errorCode || 'None'} | Setpoint vs Room: ${f(data.msHeads[i].setpoint, tempUnit)} set / ${f(data.msHeads[i].roomTemp, tempUnit)}\n`;
+                            }
                         }
                     }
 
@@ -342,62 +454,113 @@
                         if (!isMiniSplit) text += `**Metering Device:** ${sel(data.meteringDevice)}\n`;
                     }
 
-                    text += `\n### 🌬️ AIRFLOW DATA\n`;
-                    text += `- **Return Temp (DB):** ${f(data.returnTemp, tempUnit)}\n`;
-                    text += `- **Supply Temp (DB):** ${f(data.supplyTemp, tempUnit)}\n`;
-                    text += `- **Calculated Delta T:** ${f(m.deltaT, tempUnit)}\n`;
                     if (!isMiniSplit) {
+                        text += `\n### 🌬️ AIRFLOW DATA\n`;
+                        text += `- **Return Temp (DB):** ${f(data.returnTemp, tempUnit)}\n`;
+                        text += `- **Supply Temp (DB):** ${f(data.supplyTemp, tempUnit)}\n`;
+                        if (data.operationalMode === 'Cooling') {
+                            text += `- **Return Temp (WB):** ${f(data.returnWetBulb, tempUnit)}\n`;
+                            text += `- **Supply Temp (WB):** ${f(data.supplyWetBulb, tempUnit)}\n`;
+                        }
+                        text += `- **Calculated Delta T:** ${f(m.deltaT, tempUnit)}\n`;
                         text += `- **Supply Static Pressure:** ${f(data.supplyStatic, staticUnit)}\n`;
                         text += `- **Return Static Pressure:** ${f(data.returnStatic, staticUnit)}\n`;
+                        text += `- **Total External Static Pressure (TESP):** ${f(m.tesp, staticUnit)}\n`;
                     }
 
                     if (isMiniSplit) {
                         text += `\n### 💻 MINI-SPLIT DIAGNOSTICS\n`;
-                        text += `- **Indoor Error Code:** ${data.msIndoorError || 'None'}\n- **Outdoor Error Code:** ${data.msOutdoorError || 'None'}\n`;
-                        text += `- **Setpoint vs Room:** ${data.msSetpoint || 'N/A'} set / ${data.msRoomTemp || 'N/A'}${tempUnit}\n`;
-                        text += `- **Comm Voltage:** ${f(data.msCommVoltage, 'V')}\n- **Indoor Power Voltage:** ${f(data.msIndoorPower, 'V')}\n`;
-                        text += `- **Comp. Frequency:** ${f(data.msFrequency, ' Hz')}\n- **Flare Leak Check:** ${sel(data.msFlareLeak)}\n`;
-                        text += `- **Blower Wheel Condition:** ${sel(data.msBlowerWheel)}\n- **Drain Slope/Flow Test:** ${sel(data.msDrainTest)}\n`;
+                        text += `- **Outdoor Error Code:** ${data.msOutdoorError || 'None'}\n`;
+                        text += `- **IDU Power Voltage:** L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
+                        
+                        if (parseInt(data.msHeadCount) > 0) {
+                            text += `- **IDU Communication VDC (S2-S3):**\n`;
+                            for(let i=0; i < parseInt(data.msHeadCount); i++) {
+                                const headId = String.fromCharCode(65 + i);
+                                text += `  - Head ${headId}: ${f(data.msHeads[i].voltageS2S3, 'VDC')}\n`;
+                            }
+                        }
                     }
 
                     if (isGasAvailable) {
-                        text += `\n### 🔥 GAS HEATING DATA\n`;
+                        text += `\n### 🔥 GAS MAINTENANCE & SAFETY\n`;
                         text += `- **Inlet Gas Static:** ${f(data.inletGasStatic, staticUnit)}\n- **Inlet Gas Load:** ${f(data.inletGasLoad, staticUnit)}\n- **Manifold Firing:** ${f(data.manifoldPressure, staticUnit)}\n\n`;
-                        text += `**COMBUSTION & VENTING**\n- **Inducer Amps:** ${f(data.inducerAmps, 'A')}\n- **Induced Draft Pressure:** ${f(data.inducedDraftPressure, staticUnit)}\n- **Pressure Switch Make:** ${f(data.pressureSwitchPoint, staticUnit)}\n\n`;
-                        text += `**GAS PERFORMANCE TEMPS**\n- **Return Air Temp:** ${f(data.gasReturnTemp, tempUnit)}\n- **Supply Air Temp:** ${f(data.gasSupplyTemp, tempUnit)}\n`;
+                        text += `**COMBUSTION & VENTING**\n- **Inducer Amps:** ${f(data.inducerAmps, 'A')}\n- **Induced Draft Pressure:** ${f(data.inducedDraftPressure, staticUnit)}\n- **Pressure Switch Make:** ${f(data.pressureSwitchPoint, staticUnit)}\n`;
                     }
 
                     if (showRefrigerantCircuit) {
                         text += `\n### 🌡️ REFRIGERANT CIRCUIT DATA\n`;
                         text += `**Outdoor Ambient Temp:** ${f(data.outdoorAmbient, tempUnit)}\n\n`;
-                        text += `**Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):**\n- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}\n- Line Temp: ${f(data.suctionLineTemp, tempUnit)}\n\n`;
-                        text += `**High Side (Liquid):**\n- Saturation Temp (LSAT): ${f(data.liquidSatTemp, tempUnit)}\n- Line Temp: ${f(data.liquidLineTemp, tempUnit)}\n\n`;
-                        text += `**Discharge (Hot Gas):**\n- Saturation Temp (DSAT): ${f(data.dischargeSatTemp, tempUnit)}\n- Line Temp: ${f(data.dischargeLineTemp, tempUnit)}\n`;
-                    }
-
-                    text += `\n### ⚡ ELECTRICAL DATA\n`;
-                    text += `- **Line Voltage (Under Load):** ${f(data.lineVoltage, 'V')}\n`;
-                    if (!isMiniSplit) text += `- **Control Voltage (Secondary):** ${f(data.controlVoltage, 'V')}\n`;
-                    if (showOutdoorElectrical && !isMiniSplit) {
-                        text += `- **Compressor Amps:** ${f(data.compressorAmps, 'A')}\n- **Outdoor Fan Amps:** ${f(data.fanAmps, 'A')}\n`;
-                    }
-                    if (!isMiniSplit) text += `- **Indoor Blower Amps:** ${f(data.blowerAmps, 'A')}\n`;
-
-                    if (!isMiniSplit) {
-                        text += `\n### 🔋 CAPACITOR READINGS\n`;
-                        text += `- **${isPackageUnit ? 'Blower Run Capacitor' : 'Indoor Blower Cap'}:** ${data.indoorECM ? 'ECM Motor (No Cap)' : f(data.indoorCap, ' µF')}\n`;
-                        if (hasOutdoorUnit) {
-                            text += `- **${isPackageUnit ? 'Comp/Fan Cap Type' : 'Outdoor Cap Type'}:** ${data.oduCapType || 'Not Selected'}\n`;
-                            if (data.oduCapType === 'Dual') {
-                                text += `  - ${isPackageUnit ? 'Comp/Fan Dual Herm' : 'Outdoor Herm'}: ${f(data.oduCapHerm, ' µF')}\n  - ${isPackageUnit ? 'Comp/Fan Dual Fan' : 'Outdoor Fan'}: ${f(data.oduCapFan, ' µF')}\n`;
-                            } else if (data.oduCapType === 'Single') {
-                                text += `  - ${isPackageUnit ? 'Comp Run Cap' : 'Outdoor Comp'}: ${f(data.oduCapComp, ' µF')}\n  - ${isPackageUnit ? 'Fan Run Cap' : 'Outdoor Fan'}: ${data.oduFanECM ? 'ECM Motor (No Cap)' : f(data.oduCapFan, ' µF')}\n`;
+                        
+                        if (isMiniSplit) {
+                            text += `**Vapor Service Port (Baseline):**\n- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}\n- Vapor Line Temp: ${f(data.suctionLineTemp, tempUnit)}\n\n`;
+                            text += `**Volumetric Charge Verification:**\n- Factory Base Charge: ${f(data.msBaseCharge, weightUnit)}\n- Pre-charged Length: ${f(data.msPrechargeLength, lengthUnit)}\n- Actual Line Length: ${f(data.msLineLength, lengthUnit)}\n- Charge Multiplier: ${f(data.msChargeMultiplier, multiplierUnit)}\n`;
+                            if (!isNaN(m.msCalculatedCharge)) {
+                                text += `- Calculated Target Charge: ${f(m.msCalculatedCharge, weightUnit)}\n`;
+                            }
+                            text += `- Total Recovered Charge: ${f(data.msRecoveredCharge, weightUnit)}\n`;
+                            if (!isNaN(m.msChargeDeviation)) {
+                                text += `- Charge Deviation: ${m.msChargeDeviation > 0 ? '+' : ''}${f(m.msChargeDeviation, weightUnit)} (${m.msChargeDeviation > 0 ? 'Overcharged' : 'Undercharged'})\n`;
+                            }
+                            text += `- Total Weighed-In Charge: ${f(data.msTotalWeighedCharge, weightUnit)}\n`;
+                        } else {
+                            text += `**Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):**\n- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}\n- Line Temp: ${f(data.suctionLineTemp, tempUnit)}\n\n`;
+                            text += `**High Side (Liquid):**\n- Saturation Temp (${isHeatingRefrigerant ? 'CSAT' : 'LSAT'}): ${f(data.liquidSatTemp, tempUnit)}\n- Line Temp: ${f(data.liquidLineTemp, tempUnit)}\n`;
+                            
+                            if (data.operationalMode !== 'Cooling') {
+                                text += `\n**Discharge (Hot Gas):**\n- Saturation Temp (DSAT): ${f(data.dischargeSatTemp, tempUnit)}\n- Line Temp: ${f(data.dischargeLineTemp, tempUnit)}\n`;
                             }
                         }
                     }
 
-                    if (isAuxAvailable) {
-                        text += `\n### 🧲 AUX HEATING DATA\n- **Heater Kit Amps:** ${f(data.heaterKitAmps, 'A')}\n- **Heater Kit Voltage:** ${f(data.heaterKitVoltage, 'V')}\n`;
+                    if (!isMiniSplit) {
+                        text += `\n### ⚡ ELECTRICAL DATA\n`;
+                        if (isPackageUnit) {
+                            text += `**Package Unit Electrical**\n`;
+                            text += `- Voltage: L1-L2: ${f(data.outdoorVoltageL1L2, 'V')} | L1-GND: ${f(data.outdoorVoltageL1GND, 'V')} | L2-GND: ${f(data.outdoorVoltageL2GND, 'V')}\n`;
+                            text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                            if (showOutdoorElectrical) {
+                                text += `- Motors: Comp: ${f(data.compressorAmps, 'A')} | OD Fan: ${f(data.fanAmps, 'A')} | ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                            } else {
+                                text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                            }
+                            text += `- Blower Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                            if (hasOutdoorUnit) {
+                                if (data.oduCapType === 'Dual') {
+                                    text += `- ODU Dual Cap: Herm: Rated: ${f(data.oduCapHermRated, ' µF')} / Actual: ${f(data.oduCapHermActual, ' µF')} | Fan: Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}\n`;
+                                } else if (data.oduCapType === 'Single') {
+                                    text += `- ODU Comp Cap: Rated: ${f(data.oduCapCompRated, ' µF')} / Actual: ${f(data.oduCapCompActual, ' µF')}\n`;
+                                    text += `- ODU Fan Cap: ${data.oduFanECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}`}\n`;
+                                }
+                            }
+                            if (isAuxAvailable) {
+                                text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                            }
+                        } else {
+                            if (hasOutdoorUnit) {
+                                text += `**Outdoor Electrical**\n`;
+                                text += `- Voltage: L1-L2: ${f(data.outdoorVoltageL1L2, 'V')} | L1-GND: ${f(data.outdoorVoltageL1GND, 'V')} | L2-GND: ${f(data.outdoorVoltageL2GND, 'V')}\n`;
+                                if (showOutdoorElectrical) {
+                                    text += `- Motors: Comp: ${f(data.compressorAmps, 'A')} | OD Fan: ${f(data.fanAmps, 'A')}\n`;
+                                }
+                                if (data.oduCapType === 'Dual') {
+                                    text += `- ODU Dual Cap: Herm: Rated: ${f(data.oduCapHermRated, ' µF')} / Actual: ${f(data.oduCapHermActual, ' µF')} | Fan: Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}\n`;
+                                } else if (data.oduCapType === 'Single') {
+                                    text += `- ODU Comp Cap: Rated: ${f(data.oduCapCompRated, ' µF')} / Actual: ${f(data.oduCapCompActual, ' µF')}\n`;
+                                    text += `- ODU Fan Cap: ${data.oduFanECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}`}\n`;
+                                }
+                            }
+                            
+                            if (hasOutdoorUnit) text += `\n`;
+                            text += `**Indoor Electrical**\n`;
+                            text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
+                            text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                            text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                            text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                            if (isAuxAvailable) {
+                                text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                            }
+                        }
                     }
 
                     text += `\n### 📝 ADDITIONAL NOTES\n${data.notes || 'None'}\n`;
@@ -432,11 +595,18 @@ Tonnage Rating: ${data.tonnageRating || 'N/A'}`;
                 text += `\nOperational Mode: ${sel(data.operationalMode)}`;
 
                 if (isMiniSplit && parseInt(data.msHeadCount) > 0) {
-                    text += `\nINDOOR HEAD CONFIGURATION:`;
+                    text += `\n\nINDOOR UNIT HEAD CONFIGURATION & PERFORMANCE:`;
                     for(let i=0; i < parseInt(data.msHeadCount); i++) {
-                        text += `\n- Head ${i+1}: ${sel(data.msHeads[i].type)} (${data.msHeads[i].size || 'N/A'})
+                        const headId = String.fromCharCode(65 + i);
+                        const nameLabel = data.msHeads[i].customName ? ` [${data.msHeads[i].customName}]` : '';
+                        text += `\n- Head ${headId}${nameLabel}: ${sel(data.msHeads[i].type)} (${data.msHeads[i].size || 'N/A'})
   M/N: ${data.msHeads[i].model || 'N/A'}
-  S/N: ${data.msHeads[i].serial || 'N/A'}`;
+  S/N: ${data.msHeads[i].serial || 'N/A'}
+  Airflow: Return ${f(data.msHeads[i].returnTemp, tempUnit)} / Supply ${f(data.msHeads[i].supplyTemp, tempUnit)}
+  Maintenance: Flare: ${sel(data.msHeads[i].flareLeak)} | Blower: ${sel(data.msHeads[i].blowerWheel)} | Drain: ${sel(data.msHeads[i].drainTest)}`;
+                        if (data.msHeads[i].hasDiagnostics) {
+                            text += `\n  Diagnostics: IDU Error: ${data.msHeads[i].errorCode || 'None'} | Setpoint vs Room: ${f(data.msHeads[i].setpoint, tempUnit)} set / ${f(data.msHeads[i].roomTemp, tempUnit)}`;
+                        }
                     }
                 }
 
@@ -447,28 +617,38 @@ Tonnage Rating: ${data.tonnageRating || 'N/A'}`;
                     }
                 }
 
-                text += `\n\nAIRFLOW DATA
+                if (!isMiniSplit) {
+                    text += `\n\nAIRFLOW DATA
 Return Temp (DB): ${f(data.returnTemp, tempUnit)}
-Supply Temp (DB): ${f(data.supplyTemp, tempUnit)}
-Calculated Delta T: ${f(m.deltaT, tempUnit)}${!isMiniSplit ? `
+Supply Temp (DB): ${f(data.supplyTemp, tempUnit)}`;
+
+                    if (data.operationalMode === 'Cooling') {
+                        text += `\nReturn Temp (WB): ${f(data.returnWetBulb, tempUnit)}
+Supply Temp (WB): ${f(data.supplyWetBulb, tempUnit)}`;
+                    }
+
+                    text += `\nCalculated Delta T: ${f(m.deltaT, tempUnit)}
 Supply Static Pressure: ${f(data.supplyStatic, staticUnit)}
-Return Static Pressure: ${f(data.returnStatic, staticUnit)}` : ''}`;
+Return Static Pressure: ${f(data.returnStatic, staticUnit)}
+Total External Static Pressure: ${f(m.tesp, staticUnit)}`;
+                }
 
                 if (isMiniSplit) {
                     text += `\n\nMINI-SPLIT DIAGNOSTICS
-Indoor Error Code: ${data.msIndoorError || 'None'}
 Outdoor Error Code: ${data.msOutdoorError || 'None'}
-Setpoint vs Room: ${data.msSetpoint || 'N/A'} set / ${data.msRoomTemp || 'N/A'}${tempUnit}
-Comm Voltage: ${f(data.msCommVoltage, 'V')}
-Indoor Power Voltage: ${f(data.msIndoorPower, 'V')}
-Comp. Frequency: ${f(data.msFrequency, ' Hz')}
-Flare Leak Check: ${sel(data.msFlareLeak)}
-Blower Wheel Condition: ${sel(data.msBlowerWheel)}
-Drain Slope/Flow Test: ${sel(data.msDrainTest)}`;
+IDU Power Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}`;
+                    
+                    if (parseInt(data.msHeadCount) > 0) {
+                        text += `\nIDU Communication VDC (S2-S3):`;
+                        for(let i=0; i < parseInt(data.msHeadCount); i++) {
+                            const headId = String.fromCharCode(65 + i);
+                            text += `\n- Head ${headId}: ${f(data.msHeads[i].voltageS2S3, 'VDC')}`;
+                        }
+                    }
                 }
 
                 if (isGasAvailable) {
-                    text += `\n\nGAS HEATING DATA
+                    text += `\n\nGAS MAINTENANCE & SAFETY
 Inlet Gas Static: ${f(data.inletGasStatic, staticUnit)}
 Inlet Gas Load: ${f(data.inletGasLoad, staticUnit)}
 Manifold Firing: ${f(data.manifoldPressure, staticUnit)}
@@ -476,51 +656,98 @@ Manifold Firing: ${f(data.manifoldPressure, staticUnit)}
 COMBUSTION & VENTING
 Inducer Amps: ${f(data.inducerAmps, 'A')}
 Induced Draft Pressure: ${f(data.inducedDraftPressure, staticUnit)}
-Pressure Switch Make Point: ${f(data.pressureSwitchPoint, staticUnit)}
-
-GAS PERFORMANCE TEMPS
-Return Air Temp: ${f(data.gasReturnTemp, tempUnit)}
-Supply Air Temp: ${f(data.gasSupplyTemp, tempUnit)}`;
+Pressure Switch Make Point: ${f(data.pressureSwitchPoint, staticUnit)}`;
                 }
 
                 if (showRefrigerantCircuit) {
                     text += `\n\nREFRIGERANT CIRCUIT DATA
 Outdoor Ambient Temp: ${f(data.outdoorAmbient, tempUnit)}
 
-Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):
+`;
+                    if (isMiniSplit) {
+                        text += `Vapor Service Port (Baseline):
+- Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}
+- Vapor Line Temp: ${f(data.suctionLineTemp, tempUnit)}
+
+Volumetric Charge Verification:
+- Factory Base Charge: ${f(data.msBaseCharge, weightUnit)}
+- Pre-charged Length: ${f(data.msPrechargeLength, lengthUnit)}
+- Actual Line Length: ${f(data.msLineLength, lengthUnit)}
+- Charge Multiplier: ${f(data.msChargeMultiplier, multiplierUnit)}
+`;
+                        if (!isNaN(m.msCalculatedCharge)) {
+                            text += `- Calculated Target Charge: ${f(m.msCalculatedCharge, weightUnit)}\n`;
+                        }
+                        text += `- Total Recovered Charge: ${f(data.msRecoveredCharge, weightUnit)}\n`;
+                        if (!isNaN(m.msChargeDeviation)) {
+                            text += `- Charge Deviation: ${m.msChargeDeviation > 0 ? '+' : ''}${f(m.msChargeDeviation, weightUnit)} (${m.msChargeDeviation > 0 ? 'Overcharged' : 'Undercharged'})\n`;
+                        }
+                        text += `- Total Weighed-In Charge: ${f(data.msTotalWeighedCharge, weightUnit)}`;
+                    } else {
+                        text += `Low Side (${isHeatingRefrigerant ? 'True Suction' : 'Suction'}):
 - Saturation Temp (VSAT): ${f(data.suctionSatTemp, tempUnit)}
 - Line Temp: ${f(data.suctionLineTemp, tempUnit)}
 
 High Side (Liquid):
-- Saturation Temp (LSAT): ${f(data.liquidSatTemp, tempUnit)}
-- Line Temp: ${f(data.liquidLineTemp, tempUnit)}
+- Saturation Temp (${isHeatingRefrigerant ? 'CSAT' : 'LSAT'}): ${f(data.liquidSatTemp, tempUnit)}
+- Line Temp: ${f(data.liquidLineTemp, tempUnit)}`;
 
-Discharge (Hot Gas):
+                        if (data.operationalMode !== 'Cooling') {
+                            text += `\n\nDischarge (Hot Gas):
 - Saturation Temp (DSAT): ${f(data.dischargeSatTemp, tempUnit)}
 - Line Temp: ${f(data.dischargeLineTemp, tempUnit)}`;
-                }
-
-                text += `\n\nELECTRICAL DATA
-Line Voltage (Under Load): ${f(data.lineVoltage, 'V')}${!isMiniSplit ? `
-Control Voltage (Secondary): ${f(data.controlVoltage, 'V')}` : ''}
-${showOutdoorElectrical && !isMiniSplit ? `Compressor Amps: ${f(data.compressorAmps, 'A')}
-Outdoor Fan Amps: ${f(data.fanAmps, 'A')}
-` : ''}${!isMiniSplit ? `Indoor Blower Amps: ${f(data.blowerAmps, 'A')}` : ''}`;
-
-                if (!isMiniSplit) {
-                    text += `\n\nCAPACITOR READINGS
-${isPackageUnit ? 'Blower Run Capacitor' : 'Indoor Blower Cap'}: ${data.indoorECM ? 'ECM Motor (No Cap)' : f(data.indoorCap, ' µF')}`;
-                    if (hasOutdoorUnit) {
-                        text += `\n${isPackageUnit ? 'Comp/Fan Cap Type' : 'Outdoor Cap Type'}: ${data.oduCapType || 'Not Selected'}
-${data.oduCapType === 'Dual' ? `${isPackageUnit ? 'Comp/Fan Dual Herm' : 'Outdoor Herm'}: ${f(data.oduCapHerm, ' µF')}\n${isPackageUnit ? 'Comp/Fan Dual Fan' : 'Outdoor Fan'}: ${f(data.oduCapFan, ' µF')}` : 
-  data.oduCapType === 'Single' ? `${isPackageUnit ? 'Comp Run Cap' : 'Outdoor Comp'}: ${f(data.oduCapComp, ' µF')}\n${isPackageUnit ? 'Fan Run Cap' : 'Outdoor Fan'}: ${data.oduFanECM ? 'ECM Motor (No Cap)' : f(data.oduCapFan, ' µF')}` : 'Outdoor Cap: N/A'}`;
+                        }
                     }
                 }
 
-                if (isAuxAvailable) {
-                    text += `\n\nAUX HEATING DATA
-Heater Kit Amps: ${f(data.heaterKitAmps, 'A')}
-Heater Kit Voltage: ${f(data.heaterKitVoltage, 'V')}`;
+                if (!isMiniSplit) {
+                    text += `\n\nELECTRICAL DATA\n`;
+                    if (isPackageUnit) {
+                        text += `Package Unit Electrical\n`;
+                        text += `- Voltage: L1-L2: ${f(data.outdoorVoltageL1L2, 'V')} | L1-GND: ${f(data.outdoorVoltageL1GND, 'V')} | L2-GND: ${f(data.outdoorVoltageL2GND, 'V')}\n`;
+                        text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                        if (showOutdoorElectrical) {
+                            text += `- Motors: Comp: ${f(data.compressorAmps, 'A')} | OD Fan: ${f(data.fanAmps, 'A')} | ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                        } else {
+                            text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                        }
+                        text += `- Blower Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                        if (hasOutdoorUnit) {
+                            if (data.oduCapType === 'Dual') {
+                                text += `- ODU Dual Cap: Herm: Rated: ${f(data.oduCapHermRated, ' µF')} / Actual: ${f(data.oduCapHermActual, ' µF')} | Fan: Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}\n`;
+                            } else if (data.oduCapType === 'Single') {
+                                text += `- ODU Comp Cap: Rated: ${f(data.oduCapCompRated, ' µF')} / Actual: ${f(data.oduCapCompActual, ' µF')}\n`;
+                                text += `- ODU Fan Cap: ${data.oduFanECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}`}\n`;
+                            }
+                        }
+                        if (isAuxAvailable) {
+                            text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                        }
+                    } else {
+                        if (hasOutdoorUnit) {
+                            text += `Outdoor Electrical\n`;
+                            text += `- Voltage: L1-L2: ${f(data.outdoorVoltageL1L2, 'V')} | L1-GND: ${f(data.outdoorVoltageL1GND, 'V')} | L2-GND: ${f(data.outdoorVoltageL2GND, 'V')}\n`;
+                            if (showOutdoorElectrical) {
+                                text += `- Motors: Comp: ${f(data.compressorAmps, 'A')} | OD Fan: ${f(data.fanAmps, 'A')}\n`;
+                            }
+                            if (data.oduCapType === 'Dual') {
+                                text += `- ODU Dual Cap: Herm: Rated: ${f(data.oduCapHermRated, ' µF')} / Actual: ${f(data.oduCapHermActual, ' µF')} | Fan: Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}\n`;
+                            } else if (data.oduCapType === 'Single') {
+                                text += `- ODU Comp Cap: Rated: ${f(data.oduCapCompRated, ' µF')} / Actual: ${f(data.oduCapCompActual, ' µF')}\n`;
+                                text += `- ODU Fan Cap: ${data.oduFanECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.oduCapFanRated, ' µF')} / Actual: ${f(data.oduCapFanActual, ' µF')}`}\n`;
+                            }
+                        }
+                        
+                        if (hasOutdoorUnit) text += `\n`;
+                        text += `Indoor Electrical\n`;
+                        text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
+                        text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                        text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                        text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                        if (isAuxAvailable) {
+                            text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                        }
+                    }
                 }
 
                 text += `\n\nADDITIONAL NOTES
@@ -582,7 +809,7 @@ ${data.notes || 'None'}`;
                             </div>
                             <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => setIsMetric(!isMetric)}
+                                    onClick={toggleUnits}
                                     className="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors border border-slate-600 tracking-widest uppercase"
                                 >
                                     {isMetric ? 'Metric' : 'Imperial'}
@@ -778,13 +1005,29 @@ ${data.notes || 'None'}`;
                                         {isMiniSplit && parseInt(data.msHeadCount) > 0 && (
                                             <div className="mt-4 pt-4 border-t border-gray-100">
                                                 <div className="flex items-center justify-between mb-4">
-                                                    <h3 className="text-xs font-bold text-blue-600 uppercase">Indoor Head Configuration</h3>
+                                                    <h3 className="text-xs font-bold text-blue-600 uppercase">Indoor Unit Head Configuration & Performance</h3>
                                                     <button onClick={handleClearHeads} className="text-[10px] font-bold text-red-500 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors uppercase">Clear Zones</button>
                                                 </div>
                                                 <div className="space-y-6">
                                                     {Array.from({length: parseInt(data.msHeadCount)}).map((_, i) => (
                                                         <div key={i} className="p-4 bg-blue-50/30 rounded-xl border border-blue-100 space-y-3 shadow-sm">
-                                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Head Unit {i+1}</p>
+                                                            <div className="flex items-center justify-between border-b border-blue-100/50 pb-2 mb-2">
+                                                                <div className="flex items-center gap-3 flex-1 pr-4">
+                                                                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest whitespace-nowrap">Head {String.fromCharCode(65 + i)}</span>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        placeholder="Location (e.g. Master Bedroom)" 
+                                                                        value={data.msHeads[i].customName || ''}
+                                                                        onChange={(e) => handleHeadChange(i, 'customName', e.target.value)}
+                                                                        disabled={isNonOp}
+                                                                        className={`w-full px-2 py-1 bg-white/60 border border-blue-100 rounded text-[10px] outline-none focus:ring-1 focus:ring-blue-500 placeholder-gray-400 ${isNonOp ? 'opacity-50' : ''}`}
+                                                                    />
+                                                                </div>
+                                                                <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                                                    <input type="checkbox" checked={data.msHeads[i].hasDiagnostics || false} onChange={(e) => handleHeadChange(i, 'hasDiagnostics', e.target.checked)} disabled={isNonOp} className="w-3.5 h-3.5 accent-blue-600" />
+                                                                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Log Error / Diag</span>
+                                                                </label>
+                                                            </div>
                                                             <div className="grid grid-cols-2 gap-3">
                                                                 <div className="flex flex-col">
                                                                     <label className="text-[10px] font-bold text-gray-500 uppercase">Type</label>
@@ -833,6 +1076,67 @@ ${data.notes || 'None'}`;
                                                                     />
                                                                 </div>
                                                             </div>
+                                                            <div className="grid grid-cols-2 gap-3 mt-2 pt-3 border-t border-blue-100/50">
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Return Temp</label>
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            inputMode="decimal"
+                                                                            step="any"
+                                                                            placeholder="75"
+                                                                            value={data.msHeads[i].returnTemp || ''}
+                                                                            onChange={(e) => handleHeadChange(i, 'returnTemp', e.target.value)}
+                                                                            disabled={isNonOp}
+                                                                            className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''} ${data.msHeads[i].returnTemp === '' && !isNonOp ? 'border-red-300' : 'border-gray-200'}`}
+                                                                        />
+                                                                        <span className="absolute right-2 top-1.5 text-gray-400 text-[10px]">{tempUnit}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Supply Temp</label>
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            inputMode="decimal"
+                                                                            step="any"
+                                                                            placeholder="55"
+                                                                            value={data.msHeads[i].supplyTemp || ''}
+                                                                            onChange={(e) => handleHeadChange(i, 'supplyTemp', e.target.value)}
+                                                                            disabled={isNonOp}
+                                                                            className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''} ${data.msHeads[i].supplyTemp === '' && !isNonOp ? 'border-red-300' : 'border-gray-200'}`}
+                                                                        />
+                                                                        <span className="absolute right-2 top-1.5 text-gray-400 text-[10px]">{tempUnit}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 pt-3 border-t border-blue-100/50">
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Flare Leak</label>
+                                                                    <select value={data.msHeads[i].flareLeak || ''} onChange={(e) => handleHeadChange(i, 'flareLeak', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''} ${!data.msHeads[i].flareLeak && !isNonOp ? 'border-red-300' : 'border-gray-200'}`}>
+                                                                        <option value="">(SELECT)</option>
+                                                                        <option value="Pass (Dry)">Pass</option>
+                                                                        <option value="Fail (Leak)">Fail</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Blower Wheel</label>
+                                                                    <select value={data.msHeads[i].blowerWheel || ''} onChange={(e) => handleHeadChange(i, 'blowerWheel', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''} ${!data.msHeads[i].blowerWheel && !isNonOp ? 'border-red-300' : 'border-gray-200'}`}>
+                                                                        <option value="">(SELECT)</option>
+                                                                        <option value="Clean">Clean</option>
+                                                                        <option value="Moldy">Moldy</option>
+                                                                        <option value="Impacted">Impacted</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Drain Test</label>
+                                                                    <select value={data.msHeads[i].drainTest || ''} onChange={(e) => handleHeadChange(i, 'drainTest', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''} ${!data.msHeads[i].drainTest && !isNonOp ? 'border-red-300' : 'border-gray-200'}`}>
+                                                                        <option value="">(SELECT)</option>
+                                                                        <option value="Pass (Flowing)">Pass</option>
+                                                                        <option value="Fail (Stalled)">Fail</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -840,60 +1144,126 @@ ${data.notes || 'None'}`;
                                         )}
                                     </section>
 
-                                    <section className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 shadow-sm">
-                                        <h2 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                            <Wind className="w-4 h-4 text-blue-500" /> Airflow & Static Pressure
-                                        </h2>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <NumInput label="Return Temp (DB)" name="returnTemp" placeholder="75" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                            <NumInput label="Supply Temp (DB)" name="supplyTemp" placeholder="55" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                            {!isMiniSplit && (
-                                                <>
-                                                    <NumInput label="Return Static" name="returnStatic" placeholder="0.25" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Supply Static" name="supplyStatic" placeholder="0.30" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </>
-                                            )}
-                                        </div>
-                                        {!isNaN(metrics.deltaT) && (
-                                            <div className="mt-2 text-sm bg-white p-3 rounded border border-blue-100 flex justify-between items-center">
-                                                <span className="font-medium text-gray-600">Calculated Delta T:</span>
-                                                <span className="font-bold text-blue-600 text-lg">{metrics.deltaT.toFixed(1)} {tempUnit}</span>
+                                    {!isMiniSplit && hasAnyUnitSelected && (
+                                        <section className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 shadow-sm">
+                                            <h2 className="text-sm font-bold text-blue-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                                <Wind className="w-4 h-4 text-blue-500" /> Airflow & Static Pressure
+                                            </h2>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <NumInput label="Return Temp (DB)" name="returnTemp" placeholder="75" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                <NumInput label="Supply Temp (DB)" name="supplyTemp" placeholder="55" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                {data.operationalMode === 'Cooling' && (
+                                                    <>
+                                                        <NumInput label="Return Temp (WB)" name="returnWetBulb" placeholder="62" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        <NumInput label="Supply Temp (WB)" name="supplyWetBulb" placeholder="53" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    </>
+                                                )}
+                                                <NumInput label="Return Static" name="returnStatic" placeholder="0.25" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                <NumInput label="Supply Static" name="supplyStatic" placeholder="0.30" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                             </div>
-                                        )}
-                                    </section>
+                                            {(!isNaN(metrics.deltaT) || !isNaN(metrics.tesp)) && (
+                                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {!isNaN(metrics.deltaT) && (
+                                                        <div className="text-sm bg-white p-3 rounded border border-blue-100 flex justify-between items-center shadow-sm">
+                                                            <span className="font-medium text-gray-600">Calculated Delta T:</span>
+                                                            <span className="font-bold text-blue-600 text-lg">{metrics.deltaT.toFixed(1)} {tempUnit}</span>
+                                                        </div>
+                                                    )}
+                                                    {!isNaN(metrics.tesp) && (
+                                                        <div className="text-sm bg-white p-3 rounded border border-blue-100 flex justify-between items-center shadow-sm">
+                                                            <span className="font-medium text-gray-600">Total External Static:</span>
+                                                            <span className="font-bold text-blue-600 text-lg">{metrics.tesp.toFixed(2)} {staticUnit}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
 
                                     {isMiniSplit && (
                                         <section className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 shadow-sm animate-in fade-in duration-500">
                                             <h2 className="text-sm font-bold text-indigo-800 uppercase tracking-wider mb-4 flex items-center gap-2">
                                                 <Monitor className="w-4 h-4 text-indigo-500" /> Mini-Split Diagnostics & Maintenance
                                             </h2>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mb-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-4">
+                                                
                                                 <div className="p-3 bg-white rounded-lg border border-indigo-100">
-                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Diagnostics & Controls</h3>
-                                                    <TextInput label="IDU Error Code" name="msIndoorError" placeholder="Blink count / Alpha" disabled={isNonOp} data={data} onChange={handleChange} />
+                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">ODU Diagnostics & Power</h3>
                                                     <TextInput label="ODU Error Code" name="msOutdoorError" placeholder="LED / Blink count" disabled={isNonOp} data={data} onChange={handleChange} />
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <NumInput label="Remote Setpoint" name="msSetpoint" placeholder="72" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                        <NumInput label="Room Temp" name="msRoomTemp" placeholder="75" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                    <div className="space-y-2 mt-3">
+                                                        <NumInput label="L1 to L2/N" name="indoorVoltageL1L2" placeholder="230" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <NumInput label="L1 to GND" name="indoorVoltageL1GND" placeholder="115" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <NumInput label="L2/N to GND" name="indoorVoltageL2GND" placeholder="115" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        </div>
                                                     </div>
+                                                    
+                                                    {parseInt(data.msHeadCount) > 0 && (
+                                                        <div className="mt-3 pt-3 border-t border-indigo-50">
+                                                            <h4 className="text-[10px] font-bold text-indigo-500 uppercase mb-2">IDU COMMUNICATION VDC (S2-S3)</h4>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                {Array.from({length: parseInt(data.msHeadCount)}).map((_, i) => (
+                                                                    <div key={`volt-${i}`} className="flex flex-col">
+                                                                        <label className="text-[9px] font-bold text-gray-500 uppercase truncate" title={`Head ${String.fromCharCode(65 + i)}${data.msHeads[i].customName ? ` - ${data.msHeads[i].customName}` : ''}`}>
+                                                                            Head {String.fromCharCode(65 + i)}{data.msHeads[i].customName ? ` - ${data.msHeads[i].customName}` : ''}
+                                                                        </label>
+                                                                        <div className="relative">
+                                                                            <input 
+                                                                                type="number" 
+                                                                                inputMode="decimal"
+                                                                                step="any"
+                                                                                placeholder="VDC"
+                                                                                value={data.msHeads[i].voltageS2S3 || ''}
+                                                                                onChange={(e) => handleHeadChange(i, 'voltageS2S3', e.target.value)}
+                                                                                disabled={isNonOp}
+                                                                                className={`w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''}`}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
-                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Electrical & Communication</h3>
-                                                    <NumInput label="Comm Voltage (S1-S3 / S2-S3)" name="msCommVoltage" placeholder="24-60" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="IDU Power Supply" name="msIndoorPower" placeholder="230" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Comp. Frequency" name="msFrequency" placeholder="60" unit="Hz" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
-                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Flare Connection</h3>
-                                                    <SelectInput label="Leak Check Verification" name="msFlareLeak" options={[{val:'Pass',label:'Pass (Dry)'},{val:'Fail',label:'Fail (Leak Detected)'}]} disabled={isNonOp} data={data} onChange={handleChange} />
-                                                </div>
-                                                <div className="p-3 bg-white rounded-lg border border-indigo-100">
-                                                    <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">Maintenance & Drainage</h3>
-                                                    <SelectInput label="Blower Wheel Condition" name="msBlowerWheel" options={[{val:'Clean',label:'Clean'},{val:'Moldy',label:'Moldy'},{val:'Impacted',label:'Impacted/Dirty'}]} disabled={isNonOp} data={data} onChange={handleChange} />
-                                                    <SelectInput label="Drain Slope/Flow Test" name="msDrainTest" options={[{val:'Pass',label:'Pass (Flowing)'},{val:'Fail',label:'Fail (Stalled/Slow)'}]} disabled={isNonOp} data={data} onChange={handleChange} />
-                                                </div>
+
+                                                {/* IDU Diagnostics Dynamic Panel */}
+                                                {data.msHeads.some((h, index) => index < parseInt(data.msHeadCount) && h.hasDiagnostics) && (
+                                                    <div className="p-3 bg-white rounded-lg border border-indigo-100 flex flex-col h-full">
+                                                        <h3 className="text-xs font-bold text-indigo-600 mb-3 border-b pb-1">IDU Diagnostics & Controls</h3>
+                                                        <div className="space-y-4 flex-grow">
+                                                            {data.msHeads.slice(0, parseInt(data.msHeadCount)).map((head, i) => head.hasDiagnostics ? (
+                                                                <div key={`diag-${i}`} className="p-3 bg-indigo-50/40 rounded border border-indigo-50 animate-in fade-in duration-200">
+                                                                    <h4 className="text-[10px] font-bold text-indigo-500 uppercase mb-2 truncate">
+                                                                        Head {String.fromCharCode(65 + i)}{head.customName ? ` - ${head.customName}` : ''}
+                                                                    </h4>
+                                                                    <div className="space-y-2">
+                                                                        <div className="flex flex-col">
+                                                                            <label className="text-[10px] font-bold text-gray-500 uppercase">IDU Error Code</label>
+                                                                            <input type="text" placeholder="Blink count / Alpha" value={head.errorCode || ''} onChange={(e) => handleHeadChange(i, 'errorCode', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''}`} />
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <div className="flex flex-col">
+                                                                                <label className="text-[10px] font-bold text-gray-500 uppercase">Setpoint</label>
+                                                                                <div className="relative">
+                                                                                    <input type="number" inputMode="decimal" step="any" placeholder="72" value={head.setpoint || ''} onChange={(e) => handleHeadChange(i, 'setpoint', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''}`} />
+                                                                                    <span className="absolute right-2 top-1.5 text-gray-400 text-[10px]">{tempUnit}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex flex-col">
+                                                                                <label className="text-[10px] font-bold text-gray-500 uppercase">Room Temp</label>
+                                                                                <div className="relative">
+                                                                                    <input type="number" inputMode="decimal" step="any" placeholder="75" value={head.roomTemp || ''} onChange={(e) => handleHeadChange(i, 'roomTemp', e.target.value)} disabled={isNonOp} className={`w-full px-2 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 ${isNonOp ? 'opacity-50' : ''}`} />
+                                                                                    <span className="absolute right-2 top-1.5 text-gray-400 text-[10px]">{tempUnit}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ) : null)}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
                                             </div>
                                         </section>
                                     )}
@@ -901,7 +1271,7 @@ ${data.notes || 'None'}`;
                                     {isGasAvailable && (
                                         <section className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 shadow-sm animate-in fade-in duration-500">
                                             <h2 className="text-sm font-bold text-orange-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                                <Flame className="w-4 h-4 text-orange-500" /> Gas Heat Performance
+                                                <Flame className="w-4 h-4 text-orange-500" /> Gas Maintenance & Safety
                                             </h2>
                                             
                                             <div className="p-3 bg-white rounded-lg border border-orange-100 mb-4">
@@ -913,20 +1283,12 @@ ${data.notes || 'None'}`;
                                                 </div>
                                             </div>
 
-                                            <div className="p-3 bg-white rounded-lg border border-orange-100 mb-4">
+                                            <div className="p-3 bg-white rounded-lg border border-orange-100">
                                                 <h3 className="text-xs font-bold text-orange-600 mb-3 border-b pb-1">Combustion & Venting</h3>
                                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                     <NumInput label="Inducer Amps" name="inducerAmps" placeholder="0.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                     <NumInput label="Induced Draft" name="inducedDraftPressure" placeholder="-1.2" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                     <NumInput label="Pr. Switch Make" name="pressureSwitchPoint" placeholder="-0.85" unit={staticUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                            </div>
-
-                                            <div className="p-3 bg-white rounded-lg border border-orange-100">
-                                                <h3 className="text-xs font-bold text-orange-600 mb-3 border-b pb-1">Temperature Performance</h3>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <NumInput label="Return Air Temp" name="gasReturnTemp" placeholder="70" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Supply Air Temp" name="gasSupplyTemp" placeholder="120" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                 </div>
                                             </div>
                                         </section>
@@ -935,122 +1297,284 @@ ${data.notes || 'None'}`;
                                     {showRefrigerantCircuit && (
                                         <section className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 shadow-sm">
                                             <h2 className="text-sm font-bold text-emerald-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                                <Thermometer className="w-4 h-4 text-emerald-500" /> Refrigerant Circuit
+                                                <Thermometer className="w-4 h-4 text-emerald-500" /> {isMiniSplit ? 'Refrigerant Dynamics & Verification' : 'Refrigerant Circuit'}
                                             </h2>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                 <NumInput label="Outdoor Ambient Temp" name="outdoorAmbient" placeholder="90" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                             </div>
                                             
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                                <div className="p-3 bg-white rounded-lg border border-emerald-100">
-                                                    <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Low Side ({data.operationalMode === 'Heating' ? 'True Suction' : 'Suction'})</h3>
-                                                    <NumInput label="Saturation Temp (VSAT)" name="suctionSatTemp" placeholder="40" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Line Temp" name="suctionLineTemp" placeholder="52" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                                <div className="p-3 bg-white rounded-lg border border-emerald-100">
-                                                    <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">High Side (Liquid)</h3>
-                                                    <NumInput label="Saturation Temp (LSAT)" name="liquidSatTemp" placeholder="105" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Line Temp" name="liquidLineTemp" placeholder="95" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                            </div>
+                                            {isMiniSplit ? (
+                                                <>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                                        <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                            <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Vapor Service Port (Baseline)</h3>
+                                                            <NumInput label="Saturation Temp (VSAT)" name="suctionSatTemp" placeholder="40" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <NumInput label="Vapor Line Temp" name="suctionLineTemp" placeholder="52" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <div className="text-[9px] text-gray-400 italic mt-2 leading-tight">Note: Subcooling/Superheat diagnostic algorithms structurally disabled for inverter-driven multi-zone architecture.</div>
+                                                        </div>
 
-                                            <div className="mt-4 p-3 bg-white rounded-lg border border-emerald-100">
-                                                <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Discharge (Hot Gas)</h3>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <NumInput label="Saturation Temp (DSAT)" name="dischargeSatTemp" placeholder="110" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    <NumInput label="Discharge Line Temp" name="dischargeLineTemp" placeholder="160" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                            </div>
+                                                        <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                            <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Volumetric Charge Verification</h3>
+                                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                                <NumInput label="Factory Base Charge" name="msBaseCharge" placeholder="42" unit={weightUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <NumInput label="Pre-charged Length" name="msPrechargeLength" placeholder="25" unit={lengthUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                                <NumInput label="Actual Line Length" name="msLineLength" placeholder="45" unit={lengthUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <NumInput label="Charge Multiplier" name="msChargeMultiplier" placeholder="0.2" unit={multiplierUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                            <div className="pt-2 border-t border-emerald-50">
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <NumInput label="Total Recovered" name="msRecoveredCharge" placeholder="38" unit={weightUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    <NumInput label="Total Weighed-In" name="msTotalWeighedCharge" placeholder="46" unit={weightUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {(!isNaN(metrics.msCalculatedCharge) || !isNaN(metrics.msChargeDeviation)) && (
+                                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            {!isNaN(metrics.msCalculatedCharge) && (
+                                                                <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
+                                                                    <span className="font-medium text-gray-600">Calculated Target:</span>
+                                                                    <span className="font-bold text-emerald-600 text-lg">{metrics.msCalculatedCharge.toFixed(1)} {weightUnit}</span>
+                                                                </div>
+                                                            )}
+                                                            {!isNaN(metrics.msChargeDeviation) && (
+                                                                <div className="text-sm bg-white p-3 rounded border border-emerald-100 flex justify-between items-center shadow-sm">
+                                                                    <span className="font-medium text-gray-600">Charge Deviation:</span>
+                                                                    <span className={`font-bold text-lg ${metrics.msChargeDeviation > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                                                                        {metrics.msChargeDeviation > 0 ? '+' : ''}{metrics.msChargeDeviation.toFixed(1)} {weightUnit}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                                                        <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                            <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Low Side ({data.operationalMode === 'Heating' ? 'True Suction' : 'Suction'})</h3>
+                                                            <NumInput label="Saturation Temp (VSAT)" name="suctionSatTemp" placeholder="40" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <NumInput label="Line Temp" name="suctionLineTemp" placeholder="52" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        </div>
+                                                        <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                                                            <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">High Side (Liquid)</h3>
+                                                            <NumInput label="Saturation Temp (LSAT)" name="liquidSatTemp" placeholder="105" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            <NumInput label="Line Temp" name="liquidLineTemp" placeholder="95" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        </div>
+                                                    </div>
+
+                                                    {data.operationalMode !== 'Cooling' && (
+                                                        <div className="mt-4 p-3 bg-white rounded-lg border border-emerald-100">
+                                                            <h3 className="text-xs font-bold text-emerald-600 mb-3 border-b pb-1">Discharge (Hot Gas)</h3>
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <NumInput label="Saturation Temp (DSAT)" name="dischargeSatTemp" placeholder="110" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <NumInput label="Discharge Line Temp" name="dischargeLineTemp" placeholder="160" unit={tempUnit} disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
                                         </section>
                                     )}
 
-                                    <section className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 shadow-sm">
-                                        <h2 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                            <Zap className="w-4 h-4 text-amber-500" /> Electrical Data
-                                        </h2>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                            <div className="p-3 bg-white rounded-lg border border-amber-100">
-                                                <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Voltage Checks</h3>
-                                                <NumInput label="Line Voltage (Under Load)" name="lineVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                {!isMiniSplit && <NumInput label="Control Voltage (Secondary)" name="controlVoltage" placeholder="24" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />}
-                                            </div>
-                                            {!isMiniSplit && (
-                                                <div className="p-3 bg-white rounded-lg border border-amber-100">
-                                                    <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Motor Amperage</h3>
-                                                    {showOutdoorElectrical && (
-                                                        <>
-                                                            <NumInput label="Compressor Amps" name="compressorAmps" placeholder="12.5" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                            <NumInput label="OD Fan Amps" name="fanAmps" placeholder="1.2" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                        </>
-                                                    )}
-                                                    <NumInput label="ID Blower Amps" name="blowerAmps" placeholder="2.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-                                            )}
-                                        </div>
-                                        
-                                        {!isMiniSplit && (
-                                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                                                <div className="p-3 bg-white rounded-lg border border-amber-100">
-                                                    <div className="flex items-center justify-between border-b border-amber-100 mb-3 pb-1">
-                                                        <h3 className="text-xs font-bold text-amber-600">
-                                                            {isPackageUnit ? 'Blower Run Capacitor' : 'Indoor Capacitor'}
-                                                        </h3>
-                                                        <label className="flex items-center gap-1.5 cursor-pointer">
-                                                            <input type="checkbox" name="indoorECM" checked={data.indoorECM} onChange={handleChange} disabled={isNonOp} className="w-3.5 h-3.5 accent-amber-600" />
-                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">ECM Motor</span>
-                                                        </label>
-                                                    </div>
-                                                    <NumInput label="Blower Run Capacitor" name="indoorCap" placeholder="5.0" unit="µF" disabled={isNonOp || data.indoorECM} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                </div>
-
+                                    {!isMiniSplit && hasAnyUnitSelected && (
+                                        <section className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 shadow-sm">
+                                            <h2 className="text-sm font-bold text-amber-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                                <Zap className="w-4 h-4 text-amber-500" /> Electrical Data
+                                            </h2>
+                                            
+                                            <div className="space-y-6">
+                                                {/* OUTDOOR / PACKAGE ELECTRICAL */}
                                                 {hasOutdoorUnit && (
-                                                    <div className="p-3 bg-white rounded-lg border border-amber-100 animate-in fade-in duration-300">
-                                                        <h3 className="text-xs font-bold text-amber-600 mb-3 border-b border-amber-100 pb-1">
-                                                            {isPackageUnit ? 'Compressor and Fan Capacitor' : 'Outdoor Capacitor'}
+                                                    <div className="space-y-3">
+                                                        <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1">
+                                                            {isPackageUnit ? 'Package Unit Electrical' : 'Outdoor Electrical'}
                                                         </h3>
-                                                        <SelectInput 
-                                                            label="Capacitor Configuration" 
-                                                            name="oduCapType" 
-                                                            options={[{val:'Dual',label:'Dual Run'},{val:'Single',label:'Single Run / Separate'}]} 
-                                                            disabled={isNonOp} 
-                                                            data={data} onChange={handleChange}
-                                                        />
-                                                        {data.oduCapType === 'Dual' && (
-                                                            <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
-                                                                <NumInput label="Herm (Comp)" name="oduCapHerm" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                                <NumInput label="Fan" name="oduCapFan" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            
+                                                            {/* Outdoor Voltage */}
+                                                            <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                                                                <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2">Voltage</h4>
+                                                                <div className="space-y-2">
+                                                                    <NumInput label="L1 to L2" name="outdoorVoltageL1L2" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <NumInput label="L1 to GND" name="outdoorVoltageL1GND" placeholder="120" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        <NumInput label="L2 to GND" name="outdoorVoltageL2GND" placeholder="120" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    </div>
+                                                                    {isPackageUnit && <NumInput label="Control Voltage (Secondary)" name="controlVoltage" placeholder="24" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />}
+                                                                </div>
                                                             </div>
-                                                        )}
-                                                        {data.oduCapType === 'Single' && (
-                                                            <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
-                                                                <NumInput label="Comp Cap" name="oduCapComp" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                                <div className="flex flex-col">
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <label className="text-[10px] font-bold text-gray-500">FAN CAP</label>
-                                                                        <label className="flex items-center gap-1 cursor-pointer">
-                                                                            <input type="checkbox" name="oduFanECM" checked={data.oduFanECM} onChange={handleChange} disabled={isNonOp} className="w-3 h-3 accent-amber-600" />
-                                                                            <span className="text-[8px] font-bold text-gray-400 uppercase leading-none">ECM</span>
+
+                                                            {/* Outdoor Motors */}
+                                                            <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                                                                <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2">Motors</h4>
+                                                                <div className="space-y-2">
+                                                                    {showOutdoorElectrical && (
+                                                                        <>
+                                                                            <NumInput label="Compressor Amps" name="compressorAmps" placeholder="12.5" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                            <NumInput label="OD Fan Amps" name="fanAmps" placeholder="1.2" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        </>
+                                                                    )}
+                                                                    {isPackageUnit && (
+                                                                        <NumInput label="ID Blower Amps" name="blowerAmps" placeholder="2.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    )}
+                                                                    {(!showOutdoorElectrical && !isPackageUnit) && (
+                                                                        <div className="text-xs text-gray-400 italic py-2">Motors inactive in current mode.</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Outdoor Capacitors */}
+                                                            <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm md:col-span-2">
+                                                                <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-3 border-b border-amber-50 pb-1">
+                                                                    {isPackageUnit ? 'Compressor & Fan Capacitor' : 'Outdoor Capacitor'}
+                                                                </h4>
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                                                                    <SelectInput 
+                                                                        label="Capacitor Configuration" 
+                                                                        name="oduCapType" 
+                                                                        options={[{val:'Dual',label:'Dual Run'},{val:'Single',label:'Single Run / Separate'}]} 
+                                                                        disabled={isNonOp} 
+                                                                        data={data} onChange={handleChange}
+                                                                    />
+                                                                </div>
+                                                                {data.oduCapType === 'Dual' && (
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 animate-in fade-in duration-200">
+                                                                        <div className="col-span-2 border-b border-gray-100 pb-1 mt-2">
+                                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">Herm (Compressor)</span>
+                                                                        </div>
+                                                                        <NumInput label="Rated (µF)" name="oduCapHermRated" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        <NumInput label="Actual (µF)" name="oduCapHermActual" placeholder="43.2" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        
+                                                                        <div className="col-span-2 border-b border-gray-100 pb-1 mt-2">
+                                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">Fan</span>
+                                                                        </div>
+                                                                        <NumInput label="Rated (µF)" name="oduCapFanRated" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        <NumInput label="Actual (µF)" name="oduCapFanActual" placeholder="4.9" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    </div>
+                                                                )}
+                                                                {data.oduCapType === 'Single' && (
+                                                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 animate-in fade-in duration-200">
+                                                                        <div className="col-span-2 border-b border-gray-100 pb-1 mt-2">
+                                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">Compressor</span>
+                                                                        </div>
+                                                                        <NumInput label="Rated (µF)" name="oduCapCompRated" placeholder="45" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        <NumInput label="Actual (µF)" name="oduCapCompActual" placeholder="44" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        
+                                                                        <div className="col-span-2 flex items-center justify-between border-b border-gray-100 pb-1 mt-2">
+                                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">Fan Capacitor</span>
+                                                                            <label className="flex items-center gap-1 cursor-pointer">
+                                                                                <input type="checkbox" name="oduFanECM" checked={data.oduFanECM} onChange={handleChange} disabled={isNonOp} className="w-3 h-3 accent-amber-600" />
+                                                                                <span className="text-[8px] font-bold text-gray-400 uppercase leading-none">ECM</span>
+                                                                            </label>
+                                                                        </div>
+                                                                        {!data.oduFanECM && (
+                                                                            <>
+                                                                                <NumInput label="Rated (µF)" name="oduCapFanRated" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                                <NumInput label="Actual (µF)" name="oduCapFanActual" placeholder="4.9" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                        {/* Package Unit Specifics (Indoor Cap & Aux Heat) */}
+                                                        {isPackageUnit && (
+                                                            <>
+                                                                <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm md:col-span-1">
+                                                                    <div className="flex items-center justify-between border-b border-amber-50 mb-3 pb-1">
+                                                                        <h4 className="text-[10px] font-bold text-amber-600 uppercase">Blower Run Capacitor</h4>
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                            <input type="checkbox" name="indoorECM" checked={data.indoorECM} onChange={handleChange} disabled={isNonOp} className="w-3.5 h-3.5 accent-amber-600" />
+                                                                            <span className="text-[10px] font-bold text-gray-500 uppercase">ECM Motor</span>
                                                                         </label>
                                                                     </div>
-                                                                    <NumInput label="" name="oduCapFan" placeholder="5.0" unit="µF" disabled={isNonOp || data.oduFanECM} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    {!data.indoorECM && (
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <NumInput label="Rated (µF)" name="indoorCapRated" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                            <NumInput label="Actual (µF)" name="indoorCapActual" placeholder="4.8" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                {isAuxAvailable && (
+                                                                    <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm md:col-span-1 animate-in fade-in duration-200">
+                                                                        <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-3 border-b border-amber-50 pb-1">Aux / Electric Heat</h4>
+                                                                        <div className="space-y-2">
+                                                                            <NumInput label="Heater Kit Amps" name="heaterKitAmps" placeholder="20" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                            <NumInput label="Heater Kit Voltage" name="heaterKitVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* INDOOR ELECTRICAL */}
+                                            {!isPackageUnit && (
+                                                <div className="space-y-3 pt-2">
+                                                    <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1">
+                                                        Indoor Electrical
+                                                    </h3>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        
+                                                        {/* Indoor Voltage */}
+                                                        <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                                                            <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2">Voltage</h4>
+                                                            <div className="space-y-2">
+                                                                <NumInput label="L1 to L2/N" name="indoorVoltageL1L2" placeholder={data.indoorUnitType === 'Gas Furnace' ? "120" : "240"} unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <NumInput label="L1 to GND" name="indoorVoltageL1GND" placeholder="120" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    <NumInput label="L2/N to GND" name="indoorVoltageL2GND" placeholder="0" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                </div>
+                                                                <NumInput label="Control Voltage (Secondary)" name="controlVoltage" placeholder="24" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Indoor Motors */}
+                                                        <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                                                            <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-2">Motors</h4>
+                                                            <div className="space-y-2">
+                                                                <NumInput label="ID Blower Amps" name="blowerAmps" placeholder="2.8" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Indoor Capacitors */}
+                                                        <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm">
+                                                            <div className="flex items-center justify-between border-b border-amber-50 mb-3 pb-1">
+                                                                <h4 className="text-[10px] font-bold text-amber-600 uppercase">Indoor Capacitor</h4>
+                                                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                    <input type="checkbox" name="indoorECM" checked={data.indoorECM} onChange={handleChange} disabled={isNonOp} className="w-3.5 h-3.5 accent-amber-600" />
+                                                                    <span className="text-[10px] font-bold text-gray-500 uppercase">ECM Motor</span>
+                                                                </label>
+                                                            </div>
+                                                            {!data.indoorECM && (
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <NumInput label="Rated (µF)" name="indoorCapRated" placeholder="5.0" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    <NumInput label="Actual (µF)" name="indoorCapActual" placeholder="4.8" unit="µF" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Indoor Aux Heat */}
+                                                        {isAuxAvailable && (
+                                                            <div className="p-3 bg-white rounded-lg border border-amber-100 shadow-sm animate-in fade-in duration-200">
+                                                                <h4 className="text-[10px] font-bold text-amber-600 uppercase mb-3 border-b border-amber-50 pb-1">Aux / Electric Heat</h4>
+                                                                <div className="space-y-2">
+                                                                    <NumInput label="Heater Kit Amps" name="heaterKitAmps" placeholder="20" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
+                                                                    <NumInput label="Heater Kit Voltage" name="heaterKitVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
                                                                 </div>
                                                             </div>
                                                         )}
                                                     </div>
-                                                )}
-                                                
-                                                {isAuxAvailable ? (
-                                                    <div className="p-3 bg-white rounded-lg border border-amber-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                                                        <h3 className="text-xs font-bold text-amber-600 mb-3 border-b pb-1">Aux / Electric Heat</h3>
-                                                        <NumInput label="Heater Kit Amps" name="heaterKitAmps" placeholder="20" unit="A" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                        <NumInput label="Heater Kit Voltage" name="heaterKitVoltage" placeholder="240" unit="V" disabled={isNonOp} data={data} onChange={handleChange} isNonOp={isNonOp} />
-                                                    </div>
-                                                ) : (
-                                                    <div className="hidden md:block"></div>
-                                                )}
-                                            </div>
-                                        )}
+                                                </div>
+                                            )}
+                                        </div>
                                     </section>
+                                    )}
 
                                     <section className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
                                         <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 flex items-center gap-2">
