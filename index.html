@@ -43,8 +43,6 @@
         const Trash2 = ({ className }) => <Icon className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></Icon>;
 
         // --- HOISTED UI COMPONENTS ---
-        // Relocated outside the main component scope to prevent React from 
-        // destroying and recreating input DOM nodes on every keystroke.
         const NumInput = ({ label, name, placeholder, unit, disabled, data, onChange, isNonOp }) => {
             const isEmpty = data[name] === '';
             const isReading = ['returnTemp', 'supplyTemp', 'compressorAmps', 'fanAmps', 'blowerAmps'].includes(name);
@@ -142,7 +140,7 @@
             msHeads: Array.from({length: 5}, () => ({ type: '', size: '', model: '', serial: '', voltageS2S3: '', returnTemp: '', supplyTemp: '', hasDiagnostics: false, errorCode: '', setpoint: '', roomTemp: '', customName: '', flareLeak: '', blowerWheel: '', drainTest: '' })),
             msIndoorError: '', msOutdoorError: '', msSetpoint: '', msRoomTemp: '',
             indoorCapRated: '', indoorCapActual: '', indoorECM: false, 
-            msBlowerWheel: '', msDrainTest: '',
+            oduCapType: '', oduCapHermRated: '', oduCapHermActual: '', oduCapFanRated: '', oduCapFanActual: '', oduFanECM: false, oduCapCompRated: '', oduCapCompActual: '',
             notes: ''
         };
 
@@ -198,7 +196,6 @@
             const isMiniSplit = data.outdoorUnitType === 'Mini-Split';
             const isPackageUnit = data.outdoorUnitType === 'Package Unit';
             const hasOutdoorUnit = data.outdoorUnitType !== '' && data.outdoorUnitType !== 'None';
-            const showRefrigerantDetails = hasOutdoorUnit;
             
             const isGasAvailable = (!isPackageUnit && !isMiniSplit && data.indoorUnitType === 'Gas Furnace') || (isPackageUnit && data.heatingType === 'Gas Heat');
             const isAuxAvailable = (!isPackageUnit && !isMiniSplit && data.indoorUnitType === 'Air Handler w/Heat Strips') || (isPackageUnit && data.heatingType === 'Electric Strip Heat');
@@ -208,7 +205,8 @@
 
             // Thermodynamic Visibility Logic
             const isCompressorActiveOrIdle = ['Cooling', 'Heating', 'Defrost', 'Non-Operative', ''].includes(data.operationalMode);
-            const showRefrigerantCircuit = hasOutdoorUnit;
+            const showRefrigerantDetails = hasOutdoorUnit;
+            const showRefrigerantCircuit = hasOutdoorUnit && isCompressorActiveOrIdle;
             const showOutdoorElectrical = hasOutdoorUnit && isCompressorActiveOrIdle;
 
             // Global Unit Toggle & Conversion Matrix
@@ -551,14 +549,16 @@
                                 }
                             }
                             
-                            if (hasOutdoorUnit) text += `\n`;
-                            text += `**Indoor Electrical**\n`;
-                            text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
-                            text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
-                            text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
-                            text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
-                            if (isAuxAvailable) {
-                                text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                            if (!isPackageUnit && data.indoorUnitType !== '') {
+                                if (hasOutdoorUnit) text += `\n`;
+                                text += `**Indoor Electrical**\n`;
+                                text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
+                                text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                                text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                                text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                                if (isAuxAvailable) {
+                                    text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                                }
                             }
                         }
                     }
@@ -738,20 +738,21 @@ High Side (Liquid):
                             }
                         }
                         
-                        if (hasOutdoorUnit) text += `\n`;
-                        text += `Indoor Electrical\n`;
-                        text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
-                        text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
-                        text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
-                        text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
-                        if (isAuxAvailable) {
-                            text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                        if (!isPackageUnit && data.indoorUnitType !== '') {
+                            if (hasOutdoorUnit) text += `\n`;
+                            text += `Indoor Electrical\n`;
+                            text += `- Voltage: L1-L2/N: ${f(data.indoorVoltageL1L2, 'V')} | L1-GND: ${f(data.indoorVoltageL1GND, 'V')} | L2/N-GND: ${f(data.indoorVoltageL2GND, 'V')}\n`;
+                            text += `- Control Voltage: ${f(data.controlVoltage, 'V')}\n`;
+                            text += `- Motors: ID Blower: ${f(data.blowerAmps, 'A')}\n`;
+                            text += `- Indoor Cap: ${data.indoorECM ? 'ECM Motor (No Cap)' : `Rated: ${f(data.indoorCapRated, ' µF')} / Actual: ${f(data.indoorCapActual, ' µF')}`}\n`;
+                            if (isAuxAvailable) {
+                                text += `- Aux Heat: ${f(data.heaterKitAmps, 'A')} @ ${f(data.heaterKitVoltage, 'V')}\n`;
+                            }
                         }
                     }
                 }
 
-                text += `\n\nADDITIONAL NOTES
-${data.notes || 'None'}`;
+                text += `\n\nADDITIONAL NOTES\n${data.notes || 'None'}`;
 
                 return text;
             };
@@ -1509,12 +1510,12 @@ ${data.notes || 'None'}`;
                                                                 )}
                                                             </>
                                                         )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
+                                                )}
 
                                             {/* INDOOR ELECTRICAL */}
-                                            {!isPackageUnit && (
+                                            {!isPackageUnit && data.indoorUnitType !== '' && (
                                                 <div className="space-y-3 pt-2">
                                                     <h3 className="text-xs font-black text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1">
                                                         Indoor Electrical
